@@ -1,6 +1,7 @@
 import 'package:plugin_platform_interface/plugin_platform_interface.dart';
 
 import 'flutter_libmwc_method_channel.dart';
+import 'models/slate.dart';
 
 abstract class FlutterLibmwcPlatform extends PlatformInterface {
   /// Constructs a FlutterLibmwcPlatform.
@@ -25,5 +26,25 @@ abstract class FlutterLibmwcPlatform extends PlatformInterface {
 
   Future<String?> getPlatformVersion() {
     throw UnimplementedError('platformVersion() has not been implemented.');
+  }
+
+  Future<SlateResult> createSlate(CreateSlateRequest request) {
+    throw UnimplementedError('createSlate() has not been implemented.');
+  }
+
+  Future<SlateResult> receiveSlate(ReceiveSlateRequest request) {
+    throw UnimplementedError('receiveSlate() has not been implemented.');
+  }
+
+  Future<SlateResult> finalizeSlate(FinalizeSlateRequest request) {
+    throw UnimplementedError('finalizeSlate() has not been implemented.');
+  }
+
+  Future<SlatepackResult> encodeSlatepack(EncodeSlatepackRequest request) {
+    throw UnimplementedError('encodeSlatepack() has not been implemented.');
+  }
+
+  Future<SlatepackDecodeResult> decodeSlatepack(DecodeSlatepackRequest request) {
+    throw UnimplementedError('decodeSlatepack() has not been implemented.');
   }
 }

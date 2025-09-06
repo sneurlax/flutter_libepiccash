@@ -7,6 +7,9 @@ use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+mod wallet;
+mod slatepack;
+
 use mwc_wallet_api::{self, Owner};
 use mwc_wallet_config::{WalletConfig, MQSConfig};
 use mwc_wallet_libwallet::api_impl::types::{InitTxArgs, InitTxSendArgs};
@@ -1925,4 +1928,285 @@ pub unsafe extern "C" fn _listener_cancel(handler: *mut c_void) -> *const c_char
     let ptr = error_msg_ptr.as_ptr();
     std::mem::forget(error_msg_ptr);
     ptr
+}
+
+//
+// Slatepack Functions - Phase 1
+//
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_tx_create(
+    wallet: *const c_char,
+    amount: *const c_char,
+    minimum_confirmations: *const c_char,
+    selection_strategy_is_use_all: *const c_char,
+    note: *const c_char,
+) -> *const c_char {
+    let result = match _tx_create(
+        wallet,
+        amount,
+        minimum_confirmations,
+        selection_strategy_is_use_all,
+        note,
+    ) {
+        Ok(slate_json) => {
+            slate_json
+        }, Err(e) => {
+            let error_msg = format!("Error: {}", &e.to_string());
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _tx_create(
+    wallet: *const c_char,
+    amount: *const c_char,
+    minimum_confirmations: *const c_char,
+    selection_strategy_is_use_all: *const c_char,
+    note: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_wallet = CStr::from_ptr(wallet);
+    let c_amount = CStr::from_ptr(amount);
+    let c_min_confirmations = CStr::from_ptr(minimum_confirmations);
+    let c_use_all = CStr::from_ptr(selection_strategy_is_use_all);
+    let c_note = CStr::from_ptr(note);
+
+    let wallet_data = c_wallet.to_str().unwrap();
+    let str_amount = c_amount.to_str().unwrap();
+    let str_min_confirmations = c_min_confirmations.to_str().unwrap();
+    let str_use_all = c_use_all.to_str().unwrap();
+    let str_note = c_note.to_str().unwrap();
+
+    // Parse wallet data (wallet_pointer, secret_key)
+    let tuple_wallet_data: (i64, Option<SecretKey>) = serde_json::from_str(wallet_data).unwrap();
+    let wlt = tuple_wallet_data.0;
+    let sek_key = tuple_wallet_data.1;
+
+    ensure_wallet!(wlt, wallet);
+
+    let amount: u64 = str_amount.parse().unwrap();
+    let min_confirmations: u64 = str_min_confirmations.parse().unwrap();
+    let use_all: bool = str_use_all.parse().unwrap();
+
+    let slate_json = wallet::tx_create(
+        wallet, 
+        sek_key, 
+        amount, 
+        min_confirmations, 
+        use_all, 
+        str_note
+    )?;
+
+    let result = CString::new(slate_json).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_tx_receive(
+    wallet: *const c_char,
+    slate_json: *const c_char,
+    message: *const c_char,
+) -> *const c_char {
+    let result = match _tx_receive(
+        wallet,
+        slate_json,
+        message,
+    ) {
+        Ok(updated_slate_json) => {
+            updated_slate_json
+        }, Err(e) => {
+            let error_msg = format!("Error: {}", &e.to_string());
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _tx_receive(
+    wallet: *const c_char,
+    slate_json: *const c_char,
+    message: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_wallet = CStr::from_ptr(wallet);
+    let c_slate_json = CStr::from_ptr(slate_json);
+    let c_message = CStr::from_ptr(message);
+
+    let wallet_data = c_wallet.to_str().unwrap();
+    let str_slate_json = c_slate_json.to_str().unwrap();
+    let str_message = c_message.to_str().unwrap();
+
+    // Parse wallet data (wallet_pointer, secret_key)
+    let tuple_wallet_data: (i64, Option<SecretKey>) = serde_json::from_str(wallet_data).unwrap();
+    let wlt = tuple_wallet_data.0;
+    let sek_key = tuple_wallet_data.1;
+
+    ensure_wallet!(wlt, wallet);
+
+    let message_opt = if str_message.is_empty() {
+        None
+    } else {
+        Some(str_message)
+    };
+
+    let updated_slate_json = wallet::tx_receive(
+        wallet, 
+        sek_key, 
+        str_slate_json,
+        message_opt
+    )?;
+
+    let result = CString::new(updated_slate_json).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_tx_finalize(
+    wallet: *const c_char,
+    slate_json: *const c_char,
+) -> *const c_char {
+    let result = match _tx_finalize(
+        wallet,
+        slate_json,
+    ) {
+        Ok(success_msg) => {
+            success_msg
+        }, Err(e) => {
+            let error_msg = format!("Error: {}", &e.to_string());
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _tx_finalize(
+    wallet: *const c_char,
+    slate_json: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_wallet = CStr::from_ptr(wallet);
+    let c_slate_json = CStr::from_ptr(slate_json);
+
+    let wallet_data = c_wallet.to_str().unwrap();
+    let str_slate_json = c_slate_json.to_str().unwrap();
+
+    // Parse wallet data (wallet_pointer, secret_key)
+    let tuple_wallet_data: (i64, Option<SecretKey>) = serde_json::from_str(wallet_data).unwrap();
+    let wlt = tuple_wallet_data.0;
+    let sek_key = tuple_wallet_data.1;
+
+    ensure_wallet!(wlt, wallet);
+
+    wallet::tx_finalize(wallet, sek_key, str_slate_json)?;
+
+    let success_msg = "Transaction finalized successfully";
+    let result = CString::new(success_msg).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+//
+// Slatepack Functions - Phase 2
+//
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_encode_slatepack(
+    slate_json: *const c_char,
+    recipient_address: *const c_char,
+) -> *const c_char {
+    let result = match _encode_slatepack(
+        slate_json,
+        recipient_address,
+    ) {
+        Ok(slatepack_str) => {
+            slatepack_str
+        }, Err(e) => {
+            let error_msg = format!("Error: {}", &e.to_string());
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _encode_slatepack(
+    slate_json: *const c_char,
+    recipient_address: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_slate_json = CStr::from_ptr(slate_json);
+    let c_recipient_address = CStr::from_ptr(recipient_address);
+
+    let str_slate_json = c_slate_json.to_str().unwrap();
+    let str_recipient_address = c_recipient_address.to_str().unwrap();
+
+    // Convert empty string to None for recipient address
+    let recipient_opt = if str_recipient_address.is_empty() {
+        None
+    } else {
+        Some(str_recipient_address)
+    };
+
+    let slatepack_str = slatepack::encode_slatepack(str_slate_json, recipient_opt)?;
+
+    let result = CString::new(slatepack_str).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_decode_slatepack(
+    slatepack_str: *const c_char,
+) -> *const c_char {
+    let result = match _decode_slatepack(slatepack_str) {
+        Ok(result_json) => {
+            result_json
+        }, Err(e) => {
+            let error_msg = format!("Error: {}", &e.to_string());
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _decode_slatepack(
+    slatepack_str: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_slatepack_str = CStr::from_ptr(slatepack_str);
+    let str_slatepack_str = c_slatepack_str.to_str().unwrap();
+
+    let (slate_json, sender_info, recipient_info) = slatepack::decode_slatepack(str_slatepack_str)?;
+
+    // Create a JSON response with slate and metadata
+    let response = serde_json::json!({
+        "slate_json": slate_json,
+        "sender": sender_info,
+        "recipient": recipient_info
+    });
+
+    let response_str = serde_json::to_string(&response)
+        .map_err(|e| Error::GenericError(format!("Failed to serialize response: {}", e)))?;
+
+    let result = CString::new(response_str).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
 }
