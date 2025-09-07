@@ -691,13 +691,39 @@ class WalletService {
   /// List available wallets.
   static Future<List<String>> getAvailableWallets() async {
     try {
+      print('=== Getting Available Wallets ===');
       final allKeys = await _StorageService.readAll();
-      final walletKeys = allKeys.keys
-          .where((key) => key.startsWith('${_configKey}_'))
+      print('All storage keys: ${allKeys.keys.toList()}');
+      
+      final configKeys = allKeys.keys.where((key) => key.startsWith('${_configKey}_')).toList();
+      print('Config keys found: $configKeys');
+      
+      final walletKeys = configKeys
           .map((key) => key.substring('${_configKey}_'.length))
           .toList();
-      return walletKeys;
+      
+      print('Wallet names from config: $walletKeys');
+      
+      // Filter to only include wallets whose directories actually exist.
+      final existingWallets = <String>[];
+      for (final walletName in walletKeys) {
+        final walletDir = await _getWalletDirectory(walletName);
+        final directory = Directory(walletDir);
+        if (await directory.exists()) {
+          print('Wallet directory exists: $walletDir');
+          existingWallets.add(walletName);
+        } else {
+          print('Wallet directory does not exist: $walletDir - removing from list');
+          // Optionally clean up the orphaned config.
+          await _StorageService.delete(key: '${_configKey}_$walletName');
+          await _StorageService.delete(key: '${_mnemonicKey}_$walletName');
+        }
+      }
+      
+      print('Available wallets (with existing directories): $existingWallets');
+      return existingWallets;
     } catch (e) {
+      print('Error in getAvailableWallets: $e');
       return [];
     }
   }
