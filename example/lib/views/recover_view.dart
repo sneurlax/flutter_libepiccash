@@ -1,32 +1,20 @@
-import 'dart:ffi';
-import 'dart:io';
 import 'dart:convert';
-import 'package:ffi/ffi.dart';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_libmwc/mwc.dart';
-import 'package:flutter_libmwc_example/transaction_view.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter_libmwc_example/views/transaction_view.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path_provider/path_provider.dart';
 
 class RecoverWalletView extends StatelessWidget {
   RecoverWalletView({Key? key, required this.name}) : super(key: key);
   final String name;
-  // This widget is the root of your application.
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Wallet Name',
       theme: ThemeData(
-        // This is the theme of your application.
-        //
-        // Try running your application with "flutter run". You'll see the
-        // application has a blue toolbar. Then, without quitting the app, try
-        // changing the primarySwatch below to Colors.green and then invoke
-        // "hot reload" (press "r" in the console where you ran "flutter run",
-        // or simply save your changes to "hot reload" in a Flutter IDE).
-        // Notice that the counter didn't reset back to zero; the application
-        // is not restarted.
         primarySwatch: Colors.blue,
       ),
       home: MwcRecoverWalletView(title: 'Recover from mnemonic', name: name),
@@ -40,14 +28,6 @@ class MwcRecoverWalletView extends StatefulWidget {
       : super(key: key);
 
   final String name;
-  // This widget is the home page of your application. It is stateful, meaning
-  // that it has a State object (defined below) that contains fields that affect
-  // how it looks.
-
-  // This class is the configuration for the state. It holds the values (in this
-  // case the title) provided by the parent (in this case the App widget) and
-  // used by the build method of the State. Fields in a Widget subclass are
-  // always marked "final".
 
   final String title;
 
@@ -79,10 +59,10 @@ class _MwcRecoverWalletView extends State<MwcRecoverWalletView> {
         Directory('${_appDocDir.path}/$folderName/');
 
     if (await _appDocDirFolder.exists()) {
-      //if folder already exists return path
+      // If folder already exists, return path.
       return "directory_exists";
     } else {
-      //if folder not exists create folder and then return its path
+      // If folder not exists create folder and then return its path.
       final Directory _appDocDirNewFolder =
           await _appDocDirFolder.create(recursive: true);
 
@@ -97,11 +77,11 @@ class _MwcRecoverWalletView extends State<MwcRecoverWalletView> {
     var config = {};
     config["wallet_dir"] =
         "/data/user/0/com.example.flutter_libmwc_example/app_flutter/$name/";
-    config["check_node_api_http_addr"] = "http://95.216.215.107:3413";
+    config["check_node_api_http_addr"] = "https://mwc713.mwc.mw:443";
     config["chain"] = "mainnet";
     config["account"] = "default";
-    config["api_listen_port"] = 3413;
-    config["api_listen_interface"] = "95.216.215.107";
+    config["api_listen_port"] = 443;
+    config["api_listen_interface"] = "mwc713.mwc.mw";
 
     String strConf = json.encode(config);
     return strConf;
@@ -115,17 +95,6 @@ class _MwcRecoverWalletView extends State<MwcRecoverWalletView> {
       }
     });
     return true;
-  }
-
-  String _recoverWallet(
-    String configPtr,
-    String passwordPtr,
-    String mnemonicPtr,
-    String namePtr,
-  ) {
-    final String recoverWalletStr =
-        recoverWallet(configPtr, passwordPtr, mnemonicPtr, namePtr);
-    return recoverWalletStr;
   }
 
   void _setMnemonic(value) {
@@ -157,8 +126,6 @@ class _MwcRecoverWalletView extends State<MwcRecoverWalletView> {
 
     return Scaffold(
         appBar: AppBar(
-          // Here we take the value from the MyHomePage object that was created by
-          // the App.build method, and use it to set our appbar title.
           title: Text(widget.title),
         ),
         body: Form(
@@ -217,8 +184,7 @@ class _MwcRecoverWalletView extends State<MwcRecoverWalletView> {
                     } else {
                       _setRecoverError(recover);
                     }
-                    //Store config and password in secure storage since we will need them again
-
+                    // Store config and password in secure storage since we will need them again.
                   }
                 },
                 child: const Text('Next'),
@@ -227,11 +193,5 @@ class _MwcRecoverWalletView extends State<MwcRecoverWalletView> {
             ],
           ),
         ));
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
   }
 }

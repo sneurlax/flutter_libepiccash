@@ -1,16 +1,11 @@
-import 'dart:ffi';
+import 'dart:convert';
 import 'dart:io';
 
-import 'package:flutter_libmwc_example/main.dart';
-import 'package:flutter_libmwc_example/password_view.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_libmwc/flutter_libmwc.dart';
-import 'dart:convert';
-import 'package:ffi/ffi.dart';
 import 'package:flutter_libmwc/mwc.dart';
-import 'package:flutter_libmwc_example/transaction_view.dart';
-import 'package:path_provider/path_provider.dart';
+import 'package:flutter_libmwc_example/views/transaction_view.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:path_provider/path_provider.dart';
 
 class MnemonicView extends StatelessWidget {
   MnemonicView({Key? key, required this.name, required this.password})
@@ -117,18 +112,17 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
     // TODO: make robust path finder for IOS and Android
     // although getApplicationDocumentsDirectory should be enough for both.
     if (Platform.isIOS) {
-      config["wallet_dir"] =
-          "${(await getLibraryDirectory()).path}/mwc/$name/";
+      config["wallet_dir"] = "${(await getLibraryDirectory()).path}/mwc/$name/";
       print("wallet dir ${config["wallet_dir"]}");
     } else {
       config["wallet_dir"] =
           "/data/user/0/com.example.flutter_libmwc_example/app_flutter/$name/";
     }
-    config["check_node_api_http_addr"] = "http://95.216.215.107:3413";
+    config["check_node_api_http_addr"] = "https://mwc713.mwc.mw:443";
     config["chain"] = "mainnet";
     config["account"] = "default";
-    config["api_listen_port"] = 3413;
-    config["api_listen_interface"] = "95.216.215.107";
+    config["api_listen_port"] = 443;
+    config["api_listen_interface"] = "mwc713.mwc.mw";
 
     String strConf = json.encode(config);
     return strConf;
