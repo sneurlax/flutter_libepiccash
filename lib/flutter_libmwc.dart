@@ -8,12 +8,34 @@ class FlutterLibmwc {
   Future<String?> getPlatformVersion() {
     return FlutterLibmwcPlatform.instance.getPlatformVersion();
   }
+  
+  // Methods that require wallet handle - these should be called with walletHandle parameter
+  // 
+  // Example usage with WalletService (from example app):
+  // ```dart
+  // import 'package:flutter_libmwc_example/services/wallet_service.dart';
+  // 
+  // final walletHandle = WalletService.getCurrentWalletHandle();
+  // final flutterLibmwc = FlutterLibmwc();
+  // final result = await flutterLibmwc.createSlate(request, walletHandle: walletHandle);
+  // ```
 
   /// Creates a new transaction slate using FFI (direct Rust binding)
-  Future<SlateResult> createSlate(CreateSlateRequest request) async {
+  /// 
+  /// [walletHandle] - The wallet handle obtained from wallet creation/opening operations.
+  /// If using with the example app, get this from WalletService._currentWalletHandle.
+  Future<SlateResult> createSlate(CreateSlateRequest request, {String? walletHandle}) async {
     try {
+      if (walletHandle == null) {
+        return SlateResult(
+          slateJson: '',
+          success: false,
+          error: 'No wallet handle provided. Please open a wallet first.',
+        );
+      }
+      
       final resultJson = await mwc.txCreate(
-        "wallet", // TODO: Pass actual wallet instance
+        walletHandle,
         request.amount,
         request.minimumConfirmations,
         request.selectionStrategyIsUseAll,
@@ -32,10 +54,20 @@ class FlutterLibmwc {
   }
 
   /// Receives and processes a slate using FFI (direct Rust binding)
-  Future<SlateResult> receiveSlate(ReceiveSlateRequest request) async {
+  /// 
+  /// [walletHandle] - The wallet handle obtained from wallet creation/opening operations.
+  Future<SlateResult> receiveSlate(ReceiveSlateRequest request, {String? walletHandle}) async {
     try {
+      if (walletHandle == null) {
+        return SlateResult(
+          slateJson: '',
+          success: false,
+          error: 'No wallet handle provided. Please open a wallet first.',
+        );
+      }
+      
       final resultJson = await mwc.txReceive(
-        "wallet", // TODO: Pass actual wallet instance
+        walletHandle,
         request.slateJson,
         request.message,
       );
@@ -52,10 +84,20 @@ class FlutterLibmwc {
   }
 
   /// Finalizes a slate using FFI (direct Rust binding)
-  Future<SlateResult> finalizeSlate(FinalizeSlateRequest request) async {
+  /// 
+  /// [walletHandle] - The wallet handle obtained from wallet creation/opening operations.
+  Future<SlateResult> finalizeSlate(FinalizeSlateRequest request, {String? walletHandle}) async {
     try {
+      if (walletHandle == null) {
+        return SlateResult(
+          slateJson: '',
+          success: false,
+          error: 'No wallet handle provided. Please open a wallet first.',
+        );
+      }
+      
       final resultJson = await mwc.txFinalize(
-        "wallet", // TODO: Pass actual wallet instance
+        walletHandle,
         request.slateJson,
       );
       

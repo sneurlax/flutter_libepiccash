@@ -550,6 +550,12 @@ class WalletService {
   static Future<bool> hasOpenWallet() async {
     return _currentWalletHandle != null && _currentWalletHandle!.isNotEmpty;
   }
+  
+  /// Get the current wallet handle for use with FFI operations.
+  /// Returns null if no wallet is currently open.
+  static String? getCurrentWalletHandle() {
+    return _currentWalletHandle;
+  }
 
   /// List available wallets.
   static Future<List<String>> getAvailableWallets() async {
