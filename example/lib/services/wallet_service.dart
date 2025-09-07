@@ -42,42 +42,75 @@ class _StorageService {
   }
   
   static Future<String?> read({required String key}) async {
+    print('StorageService.read() looking for key: $key');
+    
+    // Try secure storage first
     if (_useSecureStorage) {
       try {
-        return await _secureStorage.read(key: key);
+        final result = await _secureStorage.read(key: key);
+        if (result != null) {
+          print('Found key "$key" in secure storage');
+          return result;
+        }
       } catch (e) {
         print('Secure storage read failed, falling back to SharedPreferences: $e');
         _useSecureStorage = false;
       }
     }
     
-    // Fallback to SharedPreferences.
-    final prefs = await SharedPreferences.getInstance();
-    return prefs.getString('secure_$key');
+    // Try SharedPreferences (for fallback data or if secure storage failed).
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final result = prefs.getString('secure_$key');
+      if (result != null) {
+        print('Found key "$key" in SharedPreferences as "secure_$key"');
+        return result;
+      } else {
+        print('Key "$key" not found in SharedPreferences');
+      }
+    } catch (e) {
+      print('SharedPreferences read failed: $e');
+    }
+    
+    print('Key "$key" not found in either storage method');
+    return null;
   }
   
   static Future<Map<String, String>> readAll() async {
+    final result = <String, String>{};
+    
+    // Try to read from secure storage first.
     if (_useSecureStorage) {
       try {
-        return await _secureStorage.readAll();
+        final secureData = await _secureStorage.readAll();
+        result.addAll(secureData);
       } catch (e) {
         print('Secure storage readAll failed, falling back to SharedPreferences: $e');
         _useSecureStorage = false;
       }
     }
     
-    // Fallback to SharedPreferences.
-    final prefs = await SharedPreferences.getInstance();
-    final keys = prefs.getKeys();
-    final result = <String, String>{};
-    for (final key in keys) {
-      if (key.startsWith('secure_')) {
-        final value = prefs.getString(key);
-        if (value != null) {
-          result[key.substring(7)] = value; // Remove 'secure_' prefix.
+    // Also read from SharedPreferences (for fallback data or if secure storage failed).
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final keys = prefs.getKeys();
+      for (final key in keys) {
+        if (key.startsWith('secure_')) {
+          final value = prefs.getString(key);
+          if (value != null) {
+            final actualKey = key.substring(7); // Remove 'secure_' prefix.
+            // Only add if not already present from secure storage.
+            if (!result.containsKey(actualKey)) {
+              result[actualKey] = value;
+            }
+          }
         }
       }
+    } catch (e) {
+      print('SharedPreferences readAll failed: $e');
     }
+    
+    print('StorageService.readAll() found ${result.length} keys: ${result.keys.toList()}');
     return result;
   }
   
@@ -102,6 +135,7 @@ class WalletService {
   static const String _configKey = 'wallet_config';
   static const String _currentWalletKey = 'current_wallet';
   static const String _walletHandleKey = 'wallet_handle';
+  static const String _mnemonicKey = 'wallet_mnemonic';
 
   // Centralized node configuration.
   static const String defaultNodeProtocol = 'https';
@@ -224,7 +258,9 @@ class WalletService {
           await _StorageService.write(
               key: '${_configKey}_$walletName', value: configJson);
           await _StorageService.write(key: _currentWalletKey, value: walletName);
-          print('Wallet configuration stored securely');
+          await _StorageService.write(
+              key: '${_mnemonicKey}_$walletName', value: mnemonic);
+          print('Wallet configuration and mnemonic stored securely');
 
           return WalletResult(
             success: true,
@@ -237,7 +273,9 @@ class WalletService {
         await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
         await _StorageService.write(key: _currentWalletKey, value: walletName);
-        print('Wallet configuration stored securely');
+        await _StorageService.write(
+            key: '${_mnemonicKey}_$walletName', value: mnemonic);
+        print('Wallet configuration and mnemonic stored securely');
 
         return WalletResult(
           success: true,
@@ -267,7 +305,9 @@ class WalletService {
         await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
         await _StorageService.write(key: _currentWalletKey, value: walletName);
-        print('Wallet configuration stored securely');
+        await _StorageService.write(
+            key: '${_mnemonicKey}_$walletName', value: mnemonic);
+        print('Wallet configuration and mnemonic stored securely');
 
         return WalletResult(
           success: true,
@@ -325,6 +365,15 @@ class WalletService {
         return WalletResult(
           success: false,
           error: 'Failed to open wallet: empty response from MWC library',
+        );
+      }
+
+      // Check if the result is an error message instead of a wallet handle
+      if (result.toLowerCase().contains('error')) {
+        print('mwc.openWallet returned an error: $result');
+        return WalletResult(
+          success: false,
+          error: 'Failed to open wallet: $result',
         );
       }
 
@@ -404,7 +453,9 @@ class WalletService {
         await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
         await _StorageService.write(key: _currentWalletKey, value: walletName);
-        print('Wallet configuration stored securely');
+        await _StorageService.write(
+            key: '${_mnemonicKey}_$walletName', value: mnemonic);
+        print('Wallet configuration and mnemonic stored securely');
 
         return WalletResult(
           success: true,
@@ -434,7 +485,9 @@ class WalletService {
         await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
         await _StorageService.write(key: _currentWalletKey, value: walletName);
-        print('Wallet configuration stored securely');
+        await _StorageService.write(
+            key: '${_mnemonicKey}_$walletName', value: mnemonic);
+        print('Wallet configuration and mnemonic stored securely');
 
         return WalletResult(
           success: true,
@@ -660,6 +713,7 @@ class WalletService {
 
       // Remove from secure storage.
       await _StorageService.delete(key: '${_configKey}_$walletName');
+      await _StorageService.delete(key: '${_mnemonicKey}_$walletName');
 
       final currentWallet = await getCurrentWallet();
       if (currentWallet == walletName) {
@@ -683,6 +737,16 @@ class WalletService {
   static bool validateMnemonic(String mnemonic) {
     final words = mnemonic.trim().split(RegExp(r'\s+'));
     return words.length >= 12 && words.length <= 24;
+  }
+
+  /// Get the stored mnemonic for a wallet.
+  static Future<String?> getWalletMnemonic(String walletName) async {
+    try {
+      return await _StorageService.read(key: '${_mnemonicKey}_$walletName');
+    } catch (e) {
+      print('Error retrieving mnemonic for wallet $walletName: $e');
+      return null;
+    }
   }
 
   /// Initialize logging (call once at app startup).

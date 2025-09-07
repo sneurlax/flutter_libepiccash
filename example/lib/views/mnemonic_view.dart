@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_libmwc/mwc.dart';
 import 'package:flutter_libmwc_example/views/transaction_view.dart';
+import 'package:flutter_libmwc_example/services/wallet_service.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -70,6 +71,7 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
   var mnemonic = "";
   var walletConfig = "";
   final storage = new FlutterSecureStorage();
+  bool _mnemonicLoaded = false;
 
   // void _getMnemonic() {
   //   final String mnemonicString = walletMnemonic();
@@ -142,14 +144,37 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
     await storage.write(key: "config", value: config);
   }
 
+  Future<void> _loadStoredMnemonic() async {
+    if (!_mnemonicLoaded) {
+      final storedMnemonic = await WalletService.getWalletMnemonic(widget.name);
+      if (storedMnemonic != null && storedMnemonic.isNotEmpty) {
+        setState(() {
+          mnemonic = storedMnemonic;
+          _mnemonicLoaded = true;
+        });
+        print('Loaded stored mnemonic: ${storedMnemonic.split(' ').length} words');
+      } else {
+        print('No stored mnemonic found for wallet: ${widget.name}');
+        // Only generate new mnemonic if none is stored.
+        setState(() {
+          mnemonic = walletMnemonic();
+          _mnemonicLoaded = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStoredMnemonic();
+  }
+
   final _formKey = GlobalKey<FormState>();
   @override
   Widget build(BuildContext context) {
-    walletMnemonic();
     return Scaffold(
         appBar: AppBar(
-          // Here we take the value from the MyHomePage object that was created by
-          // the App.build method, and use it to set our appbar title.
           title: Text(widget.title),
         ),
         body: Center(
@@ -158,31 +183,36 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
               Text("$mnemonic"),
               ElevatedButton(
                 onPressed: () async {
-                  // _createWalletFolder(widget.name);
-                  print(widget.name);
-                  print(widget.password);
-                  bool walletFolder = _createWalletFolder(widget.name);
+                  print('Creating wallet: ${widget.name}');
+                  
+                  // Use WalletService to create the wallet properly
+                  final result = await WalletService.createWallet(
+                    walletName: widget.name,
+                    password: widget.password,
+                    customMnemonic: mnemonic.isEmpty ? null : mnemonic,
+                  );
 
-                  if (walletFolder == true) {
-                    //Create wallet
-
-                    String walletName = widget.name;
-                    String walletPassword = widget.password;
-                    String walletConfig = await _getWalletConfig(walletName);
-
-                    // String strConf = json.encode(walletConfig);
-                    //Store config and password in secure storage since we will need them again
-                    _storeConfig(walletConfig);
-                    mnemonic = walletMnemonic();
-                    initWallet(
-                        walletConfig, mnemonic, walletPassword, walletName);
-
+                  if (result.success) {
+                    print('Wallet created successfully: ${widget.name}');
+                    
+                    // Refresh the stored mnemonic to show the final version
+                    _mnemonicLoaded = false;
+                    await _loadStoredMnemonic();
+                    
                     Navigator.push(
                       context,
                       MaterialPageRoute(
                           builder: (context) => TransactionView(
                                 password: widget.password,
                               )),
+                    );
+                  } else {
+                    print('Wallet creation failed: ${result.error}');
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('Failed to create wallet: ${result.error}'),
+                        backgroundColor: Colors.red,
+                      ),
                     );
                   }
                 },
@@ -192,12 +222,6 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
             ],
           ),
         ));
-    // This method is rerun every time setState is called, for instance as done
-    // by the _incrementCounter method above.
-    //
-    // The Flutter framework has been optimized to make rerunning build methods
-    // fast, so that you can just rebuild anything that needs updating rather
-    // than having to individually change instances of widgets.
     return Form(
       key: _formKey,
       child: Column(
@@ -215,8 +239,6 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
             onPressed: () {
               // Validate returns true if the form is valid, or false otherwise.
               if (_formKey.currentState!.validate()) {
-                // If the form is valid, display a snackbar. In the real world,
-                // you'd often call a server or save the information in a database.
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Processing Data')),
                 );
@@ -224,7 +246,6 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
             },
             child: const Text('Submit'),
           ),
-          // Add TextFormFields and ElevatedButton here.
         ],
       ),
     );
