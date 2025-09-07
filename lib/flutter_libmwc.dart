@@ -70,16 +70,37 @@ class FlutterLibmwc {
     }
   }
 
-  /// Encodes a slate as slatepack using FFI (direct Rust binding)
+  /// Encodes a slate as slatepack using FFI (direct Rust binding).
   Future<SlatepackResult> encodeSlatepack(EncodeSlatepackRequest request) async {
     try {
-      final resultJson = await mwc.encodeSlatepack(
+      final slatepackString = await mwc.encodeSlatepack(
         request.slateJson,
         request.recipientAddress,
       );
       
-      final result = json.decode(resultJson);
-      return SlatepackResult.fromJson(result);
+      // Check if the result is a slatepack string (starts with BEGINSLATEPACK.).
+      if (slatepackString.startsWith('BEGINSLATEPACK.')) {
+        return SlatepackResult(
+          slatepackString: slatepackString,
+          encrypted: request.recipientAddress != null,
+          success: true,
+          error: null,
+        );
+      } else {
+        // Try to parse as JSON error response.
+        try {
+          final result = json.decode(slatepackString);
+          return SlatepackResult.fromJson(result);
+        } catch (_) {
+          // If not JSON and not slatepack, treat as error message.
+          return SlatepackResult(
+            slatepackString: '',
+            encrypted: false,
+            success: false,
+            error: slatepackString,
+          );
+        }
+      }
     } catch (e) {
       return SlatepackResult(
         slatepackString: '',

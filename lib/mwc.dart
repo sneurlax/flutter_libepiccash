@@ -222,7 +222,16 @@ final GetChainHeight _getChainHeight = mwcNative
 
 int getChainHeight(String config) {
   String latestHeight = _getChainHeight(config.toNativeUtf8()).toDartString();
-  return int.parse(latestHeight);
+  
+  // Try to parse as integer, but handle network/connection errors gracefully.
+  try {
+    return int.parse(latestHeight);
+  } catch (e) {
+    // If parsing fails, it's likely a network error message.
+    // Return -1 to indicate error state.
+    print('Chain height parse error: $latestHeight');
+    return -1;
+  }
 }
 
 final AddressInfo _addressInfo = mwcNative
