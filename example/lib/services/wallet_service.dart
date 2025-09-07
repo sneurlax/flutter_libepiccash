@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_libmwc/mwc.dart' as mwc;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class WalletResult {
   final bool success;
@@ -19,8 +20,85 @@ class WalletResult {
   });
 }
 
+// Simple storage wrapper that falls back to SharedPreferences on macOS.
+class _StorageService {
+  static const _secureStorage = FlutterSecureStorage();
+  static bool _useSecureStorage = true;
+  
+  static Future<void> write({required String key, required String value}) async {
+    if (_useSecureStorage) {
+      try {
+        await _secureStorage.write(key: key, value: value);
+        return;
+      } catch (e) {
+        print('Secure storage failed, falling back to SharedPreferences: $e');
+        _useSecureStorage = false;
+      }
+    }
+    
+    // Fallback to SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('secure_$key', value);
+  }
+  
+  static Future<String?> read({required String key}) async {
+    if (_useSecureStorage) {
+      try {
+        return await _secureStorage.read(key: key);
+      } catch (e) {
+        print('Secure storage read failed, falling back to SharedPreferences: $e');
+        _useSecureStorage = false;
+      }
+    }
+    
+    // Fallback to SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getString('secure_$key');
+  }
+  
+  static Future<Map<String, String>> readAll() async {
+    if (_useSecureStorage) {
+      try {
+        return await _secureStorage.readAll();
+      } catch (e) {
+        print('Secure storage readAll failed, falling back to SharedPreferences: $e');
+        _useSecureStorage = false;
+      }
+    }
+    
+    // Fallback to SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    final keys = prefs.getKeys();
+    final result = <String, String>{};
+    for (final key in keys) {
+      if (key.startsWith('secure_')) {
+        final value = prefs.getString(key);
+        if (value != null) {
+          result[key.substring(7)] = value; // Remove 'secure_' prefix.
+        }
+      }
+    }
+    return result;
+  }
+  
+  static Future<void> delete({required String key}) async {
+    if (_useSecureStorage) {
+      try {
+        await _secureStorage.delete(key: key);
+        return;
+      } catch (e) {
+        print('Secure storage delete failed, falling back to SharedPreferences: $e');
+        _useSecureStorage = false;
+      }
+    }
+    
+    // Fallback to SharedPreferences.
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('secure_$key');
+  }
+}
+
 class WalletService {
-  static const _storage = FlutterSecureStorage();
   static const String _configKey = 'wallet_config';
   static const String _currentWalletKey = 'current_wallet';
   static const String _walletHandleKey = 'wallet_handle';
@@ -143,9 +221,9 @@ class WalletService {
         // Check for success status in JSON response
         if (walletData['status'] == 'success') {
           print('Wallet created successfully according to JSON response');
-          await _storage.write(
+          await _StorageService.write(
               key: '${_configKey}_$walletName', value: configJson);
-          await _storage.write(key: _currentWalletKey, value: walletName);
+          await _StorageService.write(key: _currentWalletKey, value: walletName);
           print('Wallet configuration stored securely');
 
           return WalletResult(
@@ -156,9 +234,9 @@ class WalletService {
         }
 
         // JSON response with other data - store config and return.
-        await _storage.write(
+        await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
-        await _storage.write(key: _currentWalletKey, value: walletName);
+        await _StorageService.write(key: _currentWalletKey, value: walletName);
         print('Wallet configuration stored securely');
 
         return WalletResult(
@@ -186,9 +264,9 @@ class WalletService {
         print(
             'Wallet handle preview: ${result.length > 50 ? result.substring(0, 50) + '...' : result}');
 
-        await _storage.write(
+        await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
-        await _storage.write(key: _currentWalletKey, value: walletName);
+        await _StorageService.write(key: _currentWalletKey, value: walletName);
         print('Wallet configuration stored securely');
 
         return WalletResult(
@@ -223,7 +301,7 @@ class WalletService {
       print('Password Length: ${password.length}');
 
       // Retrieve stored configuration.
-      final configJson = await _storage.read(key: '${_configKey}_$walletName');
+      final configJson = await _StorageService.read(key: '${_configKey}_$walletName');
       if (configJson == null) {
         print('Error: Wallet configuration not found for $walletName');
         return WalletResult(
@@ -254,7 +332,7 @@ class WalletService {
       _currentWalletHandle = result;
       print('Wallet handle stored: ${result.length} characters');
 
-      await _storage.write(key: _currentWalletKey, value: walletName);
+      await _StorageService.write(key: _currentWalletKey, value: walletName);
       return WalletResult(
         success: true,
         walletName: walletName,
@@ -323,9 +401,9 @@ class WalletService {
         }
 
         // JSON response with success - store config and return.
-        await _storage.write(
+        await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
-        await _storage.write(key: _currentWalletKey, value: walletName);
+        await _StorageService.write(key: _currentWalletKey, value: walletName);
         print('Wallet configuration stored securely');
 
         return WalletResult(
@@ -353,9 +431,9 @@ class WalletService {
         print(
             'Wallet handle preview: ${result.length > 50 ? result.substring(0, 50) + '...' : result}');
 
-        await _storage.write(
+        await _StorageService.write(
             key: '${_configKey}_$walletName', value: configJson);
-        await _storage.write(key: _currentWalletKey, value: walletName);
+        await _StorageService.write(key: _currentWalletKey, value: walletName);
         print('Wallet configuration stored securely');
 
         return WalletResult(
@@ -486,7 +564,7 @@ class WalletService {
       print('=== Getting Chain Height Debug ===');
       print('Wallet Name: $walletName');
 
-      final configJson = await _storage.read(key: '${_configKey}_$walletName');
+      final configJson = await _StorageService.read(key: '${_configKey}_$walletName');
       if (configJson == null) {
         print('Config not found for wallet: $walletName');
         return null;
@@ -543,7 +621,7 @@ class WalletService {
 
   /// Get current wallet name.
   static Future<String?> getCurrentWallet() async {
-    return await _storage.read(key: _currentWalletKey);
+    return await _StorageService.read(key: _currentWalletKey);
   }
 
   /// Check if there is a wallet open (has current wallet handle).
@@ -560,7 +638,7 @@ class WalletService {
   /// List available wallets.
   static Future<List<String>> getAvailableWallets() async {
     try {
-      final allKeys = await _storage.readAll();
+      final allKeys = await _StorageService.readAll();
       final walletKeys = allKeys.keys
           .where((key) => key.startsWith('${_configKey}_'))
           .map((key) => key.substring('${_configKey}_'.length))
@@ -574,18 +652,18 @@ class WalletService {
   /// Delete a wallet.
   static Future<bool> deleteWallet(String walletName) async {
     try {
-      final configJson = await _storage.read(key: '${_configKey}_$walletName');
+      final configJson = await _StorageService.read(key: '${_configKey}_$walletName');
       if (configJson != null) {
         // Delete from Rust backend.
         await mwc.deleteWallet(walletName, configJson);
       }
 
       // Remove from secure storage.
-      await _storage.delete(key: '${_configKey}_$walletName');
+      await _StorageService.delete(key: '${_configKey}_$walletName');
 
       final currentWallet = await getCurrentWallet();
       if (currentWallet == walletName) {
-        await _storage.delete(key: _currentWalletKey);
+        await _StorageService.delete(key: _currentWalletKey);
       }
 
       // Delete wallet directory.
