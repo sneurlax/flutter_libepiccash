@@ -2177,8 +2177,18 @@ pub unsafe extern "C" fn rust_decode_slatepack(
         Ok(result_json) => {
             result_json
         }, Err(e) => {
-            let error_msg = format!("Error: {}", &e.to_string());
-            let error_msg_ptr = CString::new(error_msg).unwrap();
+            // Return proper JSON error response matching SlatepackDecodeResult structure
+            let error_response = serde_json::json!({
+                "slate_json": "",
+                "sender": null,
+                "recipient": null,
+                "success": false,
+                "error": e.to_string()
+            });
+            let error_json = serde_json::to_string(&error_response).unwrap_or_else(|_| 
+                format!(r#"{{"slate_json":"","success":false,"error":"{}"}}"#, e.to_string())
+            );
+            let error_msg_ptr = CString::new(error_json).unwrap();
             let ptr = error_msg_ptr.as_ptr();
             std::mem::forget(error_msg_ptr);
             ptr
@@ -2195,11 +2205,12 @@ unsafe fn _decode_slatepack(
 
     let (slate_json, sender_info, recipient_info) = slatepack::decode_slatepack(str_slatepack_str)?;
 
-    // Create a JSON response with slate and metadata
+    // Create a JSON response with slate and metadata matching SlatepackDecodeResult structure
     let response = serde_json::json!({
         "slate_json": slate_json,
         "sender": sender_info,
-        "recipient": recipient_info
+        "recipient": recipient_info,
+        "success": true
     });
 
     let response_str = serde_json::to_string(&response)
