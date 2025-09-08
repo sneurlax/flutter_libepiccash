@@ -9,6 +9,7 @@ import 'views/restore_wallet_view.dart';
 import 'views/slatepack_demo_view.dart';
 import 'views/wallet_info_view.dart';
 import 'views/wallet_settings_view.dart';
+import 'views/mwc713_features_test_view.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -248,6 +249,24 @@ class _WalletHomeViewState extends State<WalletHomeView> {
                           Navigator.of(context).push(
                             MaterialPageRoute<dynamic>(
                               builder: (context) => const SlatepackDemoView(),
+                            ),
+                          );
+                        }
+                      : null,
+                ),
+                _buildMenuButton(
+                  title: 'MWC713 Features Test',
+                  subtitle: _isWalletOpen
+                      ? 'Test MWCMQS, File Transactions, Payment Proofs & Encrypted Slatepacks'
+                      : 'Open a wallet first to test MWC713 features',
+                  icon: Icons.science,
+                  backgroundColor: Colors.red,
+                  enabled: _isWalletOpen,
+                  onPressed: _isWalletOpen
+                      ? () {
+                          Navigator.of(context).push(
+                            MaterialPageRoute<dynamic>(
+                              builder: (context) => const MWC713FeaturesTestView(),
                             ),
                           );
                         }

@@ -97,7 +97,7 @@ class MwcmqsAddress {
   /// Validate MWCMQS address format.
   static bool isValid(String address) {
     try {
-      parse(address);
+      MwcmqsAddress.parse(address);
       return true;
     } catch (e) {
       return false;

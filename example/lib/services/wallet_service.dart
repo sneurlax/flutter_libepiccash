@@ -834,6 +834,20 @@ class WalletService {
     return _currentWalletHandle != null && _currentWalletHandle!.isNotEmpty;
   }
 
+  /// True if a wallet is currently open and a handle is available.
+  static bool get isWalletOpen =>
+      _currentWalletHandle != null && _currentWalletHandle!.isNotEmpty;
+
+  /// Returns the current wallet handle as a String.
+  /// Throws if no wallet is currently open.
+  static String getWalletString() {
+    final handle = _currentWalletHandle;
+    if (handle == null || handle.isEmpty) {
+      throw Exception('Wallet is not open');
+    }
+    return handle;
+  }
+
   /// Validate wallet is properly opened and ready for operations
   static Future<bool> _validateWalletState(String walletName) async {
     print('=== Validating Wallet State ===');

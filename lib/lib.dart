@@ -1426,10 +1426,10 @@ abstract class Libmwc {
       final wasEncrypted = decodeResponse['sender'] != null || decodeResponse['recipient'] != null;
       
       return (
-        slateJson: decodeResponse['slate_json'],
+        slateJson: decodeResponse['slate_json'] as String,
         wasEncrypted: wasEncrypted,
-        senderAddress: decodeResponse['sender'],
-        recipientAddress: decodeResponse['recipient'],
+        senderAddress: decodeResponse['sender'] as String?,
+        recipientAddress: decodeResponse['recipient'] as String?,
       );
     } catch (e) {
       throw ("Error decoding enhanced slatepack: ${e.toString()}");
