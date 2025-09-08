@@ -357,6 +357,12 @@ typedef EncodeSlatepackFFI = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>
 typedef DecodeSlatepack = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef DecodeSlatepackFFI = Pointer<Utf8> Function(Pointer<Utf8>);
 
+typedef GeneratePaymentProof = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef GeneratePaymentProofFFI = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+
+typedef VerifyPaymentProof = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+typedef VerifyPaymentProofFFI = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
+
 final TxCreate _txCreate = mwcNative
     .lookup<NativeFunction<TxCreateFFI>>("rust_tx_create")
     .asFunction();
@@ -419,6 +425,29 @@ final DecodeSlatepack _decodeSlatepack = mwcNative
 
 Future<String> decodeSlatepack(String slatepackString) async {
   return _decodeSlatepack(slatepackString.toNativeUtf8()).toDartString();
+}
+
+final GeneratePaymentProof _generatePaymentProof = mwcNative
+    .lookup<NativeFunction<GeneratePaymentProofFFI>>("rust_generate_payment_proof")
+    .asFunction();
+
+Future<String> generatePaymentProof(String wallet, String txId, String message) async {
+  return _generatePaymentProof(
+      wallet.toNativeUtf8(),
+      txId.toNativeUtf8(),
+      message.toNativeUtf8())
+      .toDartString();
+}
+
+final VerifyPaymentProof _verifyPaymentProof = mwcNative
+    .lookup<NativeFunction<VerifyPaymentProofFFI>>("rust_verify_payment_proof")
+    .asFunction();
+
+Future<String> verifyPaymentProof(String wallet, String proofJson) async {
+  return _verifyPaymentProof(
+      wallet.toNativeUtf8(),
+      proofJson.toNativeUtf8())
+      .toDartString();
 }
 
 

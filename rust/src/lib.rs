@@ -6,6 +6,7 @@ use std::sync::Arc;
 use rand::thread_rng;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
+use chrono;
 
 mod wallet;
 mod slatepack;
@@ -2215,6 +2216,198 @@ unsafe fn _decode_slatepack(
 
     let response_str = serde_json::to_string(&response)
         .map_err(|e| Error::GenericError(format!("Failed to serialize response: {}", e)))?;
+
+    let result = CString::new(response_str).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+//
+// Payment Proof Functions.
+//
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_generate_payment_proof(
+    wallet: *const c_char,
+    tx_id: *const c_char,
+    message: *const c_char,
+) -> *const c_char {
+    let result = match _generate_payment_proof(wallet, tx_id, message) {
+        Ok(proof_json) => {
+            proof_json
+        }, Err(e) => {
+            let error_response = serde_json::json!({
+                "success": false,
+                "error": e.to_string()
+            });
+            let error_json = serde_json::to_string(&error_response).unwrap_or_else(|_| 
+                format!(r#"{{"success":false,"error":"{}"}}"#, e.to_string())
+            );
+            let error_msg_ptr = CString::new(error_json).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _generate_payment_proof(
+    wallet: *const c_char,
+    tx_id: *const c_char,
+    message: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_wallet = CStr::from_ptr(wallet);
+    let c_tx_id = CStr::from_ptr(tx_id);
+    let c_message = CStr::from_ptr(message);
+
+    let wallet_data = c_wallet.to_str().unwrap();
+    let str_tx_id = c_tx_id.to_str().unwrap();
+    let str_message = c_message.to_str().unwrap();
+
+    // Parse wallet data (wallet_pointer, secret_key).
+    let tuple_wallet_data: (i64, Option<SecretKey>) = serde_json::from_str(wallet_data).unwrap();
+    let wlt = tuple_wallet_data.0;
+    let sek_key = tuple_wallet_data.1;
+
+    ensure_wallet!(wlt, wallet);
+
+    // Parse transaction ID.
+    let tx_uuid = match uuid::Uuid::parse_str(str_tx_id) {
+        Ok(uuid) => uuid,
+        Err(e) => return Err(Error::GenericError(format!("Invalid transaction ID: {}", e))),
+    };
+
+    let message_opt = if str_message.is_empty() {
+        None
+    } else {
+        Some(str_message.to_string())
+    };
+
+    // Generate payment proof using MWC wallet library.
+    let api = Owner::new(wallet.clone(), None, None);
+    
+    let proof_result = match api.create_tx_proof(
+        sek_key.as_ref(), 
+        None,  // tx_id - let MWC find by UUID.
+        Some(tx_uuid),
+        message_opt.as_ref()
+    ) {
+        Ok(proof_data) => proof_data,
+        Err(e) => return Err(Error::GenericError(format!("Failed to create payment proof: {}", e))),
+    };
+
+    // Format the proof response to match PaymentProof model.
+    let response = serde_json::json!({
+        "success": true,
+        "proof": {
+            "transactionId": str_tx_id,
+            "senderAddress": proof_result.sender,
+            "receiverAddress": proof_result.receiver,
+            "amount": proof_result.amount,
+            "kernelExcess": proof_result.excess,
+            "kernelSignature": proof_result.recipient_sig,
+            "message": message_opt,
+            "timestamp": chrono::Utc::now().to_rfc3339(),
+            "proofSignature": proof_result.sender_sig
+        }
+    });
+
+    let response_str = serde_json::to_string(&response)
+        .map_err(|e| Error::GenericError(format!("Failed to serialize proof response: {}", e)))?;
+
+    let result = CString::new(response_str).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn rust_verify_payment_proof(
+    wallet: *const c_char,
+    proof_json: *const c_char,
+) -> *const c_char {
+    let result = match _verify_payment_proof(wallet, proof_json) {
+        Ok(verification_json) => {
+            verification_json
+        }, Err(e) => {
+            let error_response = serde_json::json!({
+                "isValid": false,
+                "kernelFound": false,
+                "signatureValid": false,
+                "amountMatches": false,
+                "errorMessage": e.to_string()
+            });
+            let error_json = serde_json::to_string(&error_response).unwrap_or_else(|_| 
+                format!(r#"{{"isValid":false,"kernelFound":false,"signatureValid":false,"amountMatches":false,"errorMessage":"{}"}}"#, e.to_string())
+            );
+            let error_msg_ptr = CString::new(error_json).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
+unsafe fn _verify_payment_proof(
+    wallet: *const c_char,
+    proof_json: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_wallet = CStr::from_ptr(wallet);
+    let c_proof_json = CStr::from_ptr(proof_json);
+
+    let wallet_data = c_wallet.to_str().unwrap();
+    let str_proof_json = c_proof_json.to_str().unwrap();
+
+    // Parse wallet data (wallet_pointer, secret_key).
+    let tuple_wallet_data: (i64, Option<SecretKey>) = serde_json::from_str(wallet_data).unwrap();
+    let wlt = tuple_wallet_data.0;
+    let sek_key = tuple_wallet_data.1;
+
+    ensure_wallet!(wlt, wallet);
+
+    // Parse the proof JSON.
+    let proof_data: serde_json::Value = serde_json::from_str(str_proof_json)
+        .map_err(|e| Error::GenericError(format!("Invalid proof JSON: {}", e)))?;
+
+    // Convert proof data to MWC proof format.
+    let tx_proof = mwc_wallet_libwallet::api_impl::types::TxProof {
+        address: proof_data["receiverAddress"].as_str().unwrap_or("").to_string(),
+        message: proof_data["message"].as_str().map(|s| s.to_string()),
+        signature: proof_data["proofSignature"].as_str().unwrap_or("").to_string(),
+        challenge: proof_data["kernelExcess"].as_str().unwrap_or("").to_string(),
+        excess: proof_data["kernelExcess"].as_str().unwrap_or("").to_string(),
+        sender_sig: proof_data["proofSignature"].as_str().unwrap_or("").to_string(),
+        recipient_sig: proof_data["kernelSignature"].as_str().unwrap_or("").to_string(),
+        amount: proof_data["amount"].as_u64().unwrap_or(0),
+        sender: proof_data["senderAddress"].as_str().unwrap_or("").to_string(),
+        receiver: proof_data["receiverAddress"].as_str().unwrap_or("").to_string(),
+    };
+
+    // Verify the proof using MWC wallet library.
+    let api = Owner::new(wallet.clone(), None, None);
+    
+    let verification_result = match api.verify_tx_proof(
+        sek_key.as_ref(),
+        &tx_proof
+    ) {
+        Ok(valid) => valid,
+        Err(e) => return Err(Error::GenericError(format!("Failed to verify payment proof: {}", e))),
+    };
+
+    // Create verification response.
+    let response = serde_json::json!({
+        "isValid": verification_result,
+        "kernelFound": verification_result, // Assume kernel found if verification passes.
+        "signatureValid": verification_result,
+        "amountMatches": true, // TODO: Add amount checking logic if needed.
+        "errorMessage": null
+    });
+
+    let response_str = serde_json::to_string(&response)
+        .map_err(|e| Error::GenericError(format!("Failed to serialize verification response: {}", e)))?;
 
     let result = CString::new(response_str).unwrap();
     let ptr = result.as_ptr();

@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 
 import 'package:decimal/decimal.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_libmwc/mwc.dart' as lib_mwc;
 import 'package:flutter_libmwc/models/transaction.dart';
+import 'package:flutter_libmwc/models/mwcmqs_address.dart';
+import 'package:flutter_libmwc/models/payment_proof.dart';
 import 'package:mutex/mutex.dart';
 
 class BadMWCHTTPAddressException implements Exception {
@@ -721,6 +724,868 @@ abstract class Libmwc {
   static void stopMwcMqsListener() {
     if (ListenerManager.pointer != null) {
       lib_mwc.mwcMqsListenerStop(ListenerManager.pointer!);
+    }
+  }
+
+  // ==================================================================
+  // ENHANCED MWCMQS API METHODS
+  // ==================================================================
+
+  ///
+  /// Private function wrapper for MWCMQS address generation
+  ///
+  static Future<String> _generateMwcmqsAddressWrapper(
+    ({String wallet, int index}) data,
+  ) async {
+    return lib_mwc.getAddressInfo(data.wallet, data.index);
+  }
+
+  ///
+  /// Generate MWCMQS address for current wallet
+  ///
+  static Future<MwcmqsAddress> generateMwcmqsAddress({
+    required String wallet,
+    int index = 0,
+  }) async {
+    return await m.protect(() async {
+      try {
+        String addressResult = await compute(_generateMwcmqsAddressWrapper, (
+          wallet: wallet,
+          index: index,
+        ));
+
+        if (addressResult.toUpperCase().contains("ERROR")) {
+          throw Exception("Error generating MWCMQS address: $addressResult");
+        }
+
+        // Parse the address from the result
+        // The Rust function returns the full MWCMQS address
+        return MwcmqsAddress.parse(addressResult, index: index);
+      } catch (e) {
+        throw ("Error generating MWCMQS address: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Get current MWCMQS address (using index 0)
+  ///
+  static Future<MwcmqsAddress> getCurrentMwcmqsAddress({
+    required String wallet,
+  }) async {
+    return await generateMwcmqsAddress(wallet: wallet, index: 0);
+  }
+
+  ///
+  /// Validate MWCMQS address format
+  ///
+  static bool validateMwcmqsAddress(String address) {
+    return MwcmqsAddress.isValid(address);
+  }
+
+  ///
+  /// Private function wrapper for MWCMQS transaction sending
+  ///
+  static Future<String> _sendViaMwcmqsWrapper(
+    ({
+      String wallet,
+      String mwcmqsAddress,
+      int amount,
+      String message,
+      int secretKeyIndex,
+      String mwcmqsConfig,
+      int minimumConfirmations,
+    }) data,
+  ) async {
+    return lib_mwc.createTransaction(
+        data.wallet,
+        data.amount,
+        data.mwcmqsAddress,
+        data.secretKeyIndex,
+        data.mwcmqsConfig,
+        data.minimumConfirmations,
+        data.message);
+  }
+
+  ///
+  /// Send transaction via MWCMQS
+  ///
+  static Future<({String slateId, String commitId})> sendViaMwcmqs({
+    required String wallet,
+    required String mwcmqsAddress,
+    required int amount,
+    String message = "",
+    int secretKeyIndex = 0,
+    required String mwcmqsConfig,
+    int minimumConfirmations = 10,
+  }) async {
+    return await m.protect(() async {
+      try {
+        String result = await compute(_sendViaMwcmqsWrapper, (
+          wallet: wallet,
+          mwcmqsAddress: mwcmqsAddress,
+          amount: amount,
+          message: message,
+          secretKeyIndex: secretKeyIndex,
+          mwcmqsConfig: mwcmqsConfig,
+          minimumConfirmations: minimumConfirmations,
+        ));
+
+        if (result.toUpperCase().contains("ERROR")) {
+          throw Exception("Error sending via MWCMQS: $result");
+        }
+
+        // Decode sent tx and return Slate Id (same format as existing createTransaction)
+        final slate0 = jsonDecode(result);
+        final slate = jsonDecode(slate0[0] as String);
+        final part1 = jsonDecode(slate[0] as String);
+        final part2 = jsonDecode(slate[1] as String);
+
+        List<dynamic>? outputs = part2['tx']?['body']?['outputs'] as List;
+        String? commitId =
+            (outputs.isEmpty) ? '' : outputs[0]['commit'] as String;
+
+        ({String slateId, String commitId}) data = (
+          slateId: part1[0]['tx_slate_id'],
+          commitId: commitId,
+        );
+
+        return data;
+      } catch (e) {
+        throw ("Error sending via MWCMQS: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Enhanced MWCMQS listener with configuration
+  ///
+  static Future<void> startMwcmqsListener({
+    required String wallet,
+    MwcmqsConfig config = const MwcmqsConfig(),
+  }) async {
+    try {
+      final configString = config.toConfigString();
+      ListenerManager.pointer =
+          lib_mwc.mwcMqsListenerStart(wallet, configString);
+    } catch (e) {
+      throw ("Error starting MWCMQS listener: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Stop MWCMQS listener
+  ///
+  static Future<void> stopMwcmqsListener() async {
+    if (ListenerManager.pointer != null) {
+      lib_mwc.mwcMqsListenerStop(ListenerManager.pointer!);
+      ListenerManager.pointer = null;
+    }
+  }
+
+  ///
+  /// Get MWCMQS listener status
+  ///
+  static Future<MwcmqsListenerStatus> getMwcmqsListenerStatus({
+    MwcmqsConfig config = const MwcmqsConfig(),
+  }) async {
+    final isRunning = ListenerManager.pointer != null;
+    
+    return MwcmqsListenerStatus(
+      isRunning: isRunning,
+      config: config,
+      messagesReceived: 0, // TODO: Implement message counting in Rust layer
+      startTime: isRunning ? DateTime.now() : null,
+    );
+  }
+
+  // TODO: Implement incoming transaction stream when Rust layer supports it
+  // static Stream<MwcmqsTransaction> get incomingTransactions;
+
+  // ==================================================================
+  // FILE-BASED TRANSACTION METHODS
+  // ==================================================================
+
+  ///
+  /// Create slate and save to file
+  ///
+  static Future<({String slateId, String filePath})> createSlateToFile({
+    required String wallet,
+    required String filePath,
+    required int amount,
+    String message = "",
+    int minimumConfirmations = 10,
+    bool selectionStrategyIsUseAll = false,
+  }) async {
+    return await m.protect(() async {
+      try {
+        // First create the slate using the existing tx_create function
+        final createResult = await lib_mwc.txCreate(
+          wallet,
+          amount,
+          minimumConfirmations,
+          selectionStrategyIsUseAll,
+          message,
+        );
+
+        if (createResult.toUpperCase().contains("ERROR")) {
+          throw Exception("Error creating slate: $createResult");
+        }
+
+        // Parse the slate JSON from the result
+        final slateJson = createResult;
+        
+        // Write the slate to file
+        await _writeSlateToFile(filePath, slateJson);
+
+        // Extract slate ID from the result
+        final slateData = jsonDecode(slateJson);
+        final slateId = slateData['id'] as String;
+
+        return (slateId: slateId, filePath: filePath);
+      } catch (e) {
+        throw ("Error creating slate to file: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Load slate from file and receive
+  ///
+  static Future<({String slateId, String? outputPath})> receiveSlateFromFile({
+    required String wallet,
+    required String inputPath,
+    String? outputPath,
+    String message = "",
+  }) async {
+    return await m.protect(() async {
+      try {
+        // Read the slate from file
+        final slateJson = await _readSlateFromFile(inputPath);
+        
+        // Process the slate using the existing tx_receive function
+        final receiveResult = await lib_mwc.txReceive(
+          wallet,
+          slateJson,
+          message,
+        );
+
+        if (receiveResult.toUpperCase().contains("ERROR")) {
+          throw Exception("Error receiving slate: $receiveResult");
+        }
+
+        // If output path is specified, write the updated slate
+        if (outputPath != null) {
+          await _writeSlateToFile(outputPath, receiveResult);
+        }
+
+        // Extract slate ID from the result
+        final slateData = jsonDecode(receiveResult);
+        final slateId = slateData['id'] as String;
+
+        return (slateId: slateId, outputPath: outputPath);
+      } catch (e) {
+        throw ("Error receiving slate from file: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Load received slate from file and finalize
+  ///
+  static Future<({String slateId, String? outputPath})> finalizeSlateFromFile({
+    required String wallet,
+    required String inputPath,
+    String? outputPath,
+  }) async {
+    return await m.protect(() async {
+      try {
+        // Read the slate from file
+        final slateJson = await _readSlateFromFile(inputPath);
+        
+        // Finalize the slate using the existing tx_finalize function
+        final finalizeResult = await lib_mwc.txFinalize(
+          wallet,
+          slateJson,
+        );
+
+        if (finalizeResult.toUpperCase().contains("ERROR")) {
+          throw Exception("Error finalizing slate: $finalizeResult");
+        }
+
+        // Extract slate ID from the original slate (finalize returns success message)
+        final slateData = jsonDecode(slateJson);
+        final slateId = slateData['id'] as String;
+
+        // If output path is specified, write finalization status
+        if (outputPath != null) {
+          await _writeSlateToFile(outputPath, finalizeResult);
+        }
+
+        return (slateId: slateId, outputPath: outputPath);
+      } catch (e) {
+        throw ("Error finalizing slate from file: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Encode slate to slatepack file
+  ///
+  static Future<void> encodeSlatepackToFile({
+    required String slateJson,
+    required String outputPath,
+    String? recipientAddress,
+  }) async {
+    try {
+      // Encode the slatepack using existing function
+      final slatepackResult = await lib_mwc.encodeSlatepack(
+        slateJson,
+        recipientAddress,
+      );
+
+      if (slatepackResult.toUpperCase().contains("ERROR")) {
+        throw Exception("Error encoding slatepack: $slatepackResult");
+      }
+
+      // Write slatepack to file
+      await _writeSlateToFile(outputPath, slatepackResult);
+    } catch (e) {
+      throw ("Error encoding slatepack to file: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Decode slatepack from file
+  ///
+  static Future<Map<String, dynamic>> decodeSlatepackFromFile({
+    required String inputPath,
+  }) async {
+    try {
+      // Read slatepack from file
+      final slatepackString = await _readSlateFromFile(inputPath);
+      
+      // Decode the slatepack using existing function
+      final decodeResult = await lib_mwc.decodeSlatepack(slatepackString);
+
+      if (decodeResult.toUpperCase().contains("ERROR")) {
+        throw Exception("Error decoding slatepack: $decodeResult");
+      }
+
+      return jsonDecode(decodeResult);
+    } catch (e) {
+      throw ("Error decoding slatepack from file: ${e.toString()}");
+    }
+  }
+
+  // ==================================================================
+  // PRIVATE FILE I/O HELPER METHODS
+  // ==================================================================
+
+  ///
+  /// Write slate data to file with proper formatting
+  ///
+  static Future<void> _writeSlateToFile(String filePath, String content) async {
+    try {
+      final file = File(filePath);
+      
+      // Ensure the directory exists
+      await file.parent.create(recursive: true);
+      
+      // Pretty-print JSON if it's valid JSON, otherwise write as-is
+      String formattedContent = content;
+      try {
+        final jsonData = jsonDecode(content);
+        formattedContent = const JsonEncoder.withIndent('  ').convert(jsonData);
+      } catch (e) {
+        // If not valid JSON, write as-is (e.g., slatepack strings)
+      }
+      
+      await file.writeAsString(formattedContent);
+    } catch (e) {
+      throw ("Error writing slate to file $filePath: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Read slate data from file
+  ///
+  static Future<String> _readSlateFromFile(String filePath) async {
+    try {
+      final file = File(filePath);
+      
+      if (!await file.exists()) {
+        throw Exception("File does not exist: $filePath");
+      }
+      
+      return await file.readAsString();
+    } catch (e) {
+      throw ("Error reading slate from file $filePath: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Validate slate file exists and is readable
+  ///
+  static Future<bool> validateSlateFile(String filePath) async {
+    try {
+      final file = File(filePath);
+      
+      if (!await file.exists()) {
+        return false;
+      }
+      
+      // Try to read and parse the content
+      final content = await file.readAsString();
+      
+      // Check if it's valid JSON (slate) or slatepack format
+      if (content.contains('BEGINSLATEPACK') || content.startsWith('{')) {
+        return true;
+      }
+      
+      return false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  ///
+  /// Get slate file metadata information
+  ///
+  static Future<Map<String, dynamic>> getSlateFileInfo(String filePath) async {
+    try {
+      final file = File(filePath);
+      
+      if (!await file.exists()) {
+        throw Exception("File does not exist: $filePath");
+      }
+      
+      final stat = await file.stat();
+      final content = await file.readAsString();
+      
+      // Determine file type
+      String fileType = 'unknown';
+      Map<String, dynamic>? slateData;
+      
+      if (content.contains('BEGINSLATEPACK')) {
+        fileType = 'slatepack';
+      } else if (content.startsWith('{')) {
+        try {
+          slateData = jsonDecode(content);
+          fileType = 'slate';
+        } catch (e) {
+          fileType = 'json';
+        }
+      }
+      
+      return {
+        'filePath': filePath,
+        'fileType': fileType,
+        'size': stat.size,
+        'modified': stat.modified.toIso8601String(),
+        'isValid': fileType != 'unknown',
+        'slateId': slateData?['id'],
+        'amount': slateData?['amount'],
+        'fee': slateData?['fee'],
+      };
+    } catch (e) {
+      throw ("Error getting slate file info: ${e.toString()}");
+    }
+  }
+
+  // ==================================================================
+  // PAYMENT PROOF METHODS
+  // ==================================================================
+
+  ///
+  /// Private function wrapper for payment proof generation
+  ///
+  static Future<String> _generatePaymentProofWrapper(
+    ({String wallet, String transactionId, String message}) data,
+  ) async {
+    return lib_mwc.generatePaymentProof(
+      data.wallet,
+      data.transactionId,
+      data.message,
+    );
+  }
+
+  ///
+  /// Generate payment proof for a completed transaction
+  ///
+  static Future<PaymentProof> generatePaymentProof({
+    required String wallet,
+    required String transactionId,
+    String message = "",
+  }) async {
+    return await m.protect(() async {
+      try {
+        String proofResult = await compute(_generatePaymentProofWrapper, (
+          wallet: wallet,
+          transactionId: transactionId,
+          message: message,
+        ));
+
+        final proofResponse = jsonDecode(proofResult);
+        
+        if (proofResponse['success'] != true) {
+          throw Exception("Error generating payment proof: ${proofResponse['error']}");
+        }
+
+        // Extract the proof data and create PaymentProof object
+        final proofData = proofResponse['proof'];
+        
+        return PaymentProof(
+          transactionId: proofData['transactionId'],
+          senderAddress: proofData['senderAddress'],
+          receiverAddress: proofData['receiverAddress'],
+          amount: proofData['amount'],
+          kernelExcess: proofData['kernelExcess'],
+          kernelSignature: proofData['kernelSignature'],
+          message: proofData['message'],
+          timestamp: DateTime.parse(proofData['timestamp']),
+          proofSignature: proofData['proofSignature'],
+        );
+      } catch (e) {
+        throw ("Error generating payment proof: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Private function wrapper for payment proof verification
+  ///
+  static Future<String> _verifyPaymentProofWrapper(
+    ({String wallet, String proofJson}) data,
+  ) async {
+    return lib_mwc.verifyPaymentProof(
+      data.wallet,
+      data.proofJson,
+    );
+  }
+
+  ///
+  /// Verify a payment proof
+  ///
+  static Future<PaymentProofVerification> verifyPaymentProof({
+    required String wallet,
+    required PaymentProof proof,
+    String? expectedSender,
+    String? expectedReceiver,
+    int? expectedAmount,
+  }) async {
+    return await m.protect(() async {
+      try {
+        // Convert proof to JSON for Rust layer
+        final proofJson = jsonEncode(proof.toJson());
+        
+        String verificationResult = await compute(_verifyPaymentProofWrapper, (
+          wallet: wallet,
+          proofJson: proofJson,
+        ));
+
+        final verificationResponse = jsonDecode(verificationResult);
+        
+        // Check expected values if provided
+        bool amountMatches = true;
+        if (expectedAmount != null) {
+          amountMatches = proof.amount == expectedAmount;
+        }
+        
+        bool senderMatches = true;
+        if (expectedSender != null) {
+          senderMatches = proof.senderAddress == expectedSender;
+        }
+        
+        bool receiverMatches = true;
+        if (expectedReceiver != null) {
+          receiverMatches = proof.receiverAddress == expectedReceiver;
+        }
+        
+        final allMatches = amountMatches && senderMatches && receiverMatches;
+        
+        return PaymentProofVerification(
+          isValid: verificationResponse['isValid'] && allMatches,
+          kernelFound: verificationResponse['kernelFound'],
+          signatureValid: verificationResponse['signatureValid'],
+          amountMatches: amountMatches,
+          errorMessage: verificationResponse['errorMessage'],
+          details: {
+            'senderMatches': senderMatches,
+            'receiverMatches': receiverMatches,
+            'expectedAmount': expectedAmount,
+            'expectedSender': expectedSender,
+            'expectedReceiver': expectedReceiver,
+          },
+        );
+      } catch (e) {
+        return PaymentProofVerification.failure("Error verifying payment proof: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Export payment proof to file
+  ///
+  static Future<void> exportPaymentProof({
+    required PaymentProof proof,
+    required String filePath,
+  }) async {
+    try {
+      final file = File(filePath);
+      
+      // Ensure the directory exists
+      await file.parent.create(recursive: true);
+      
+      // Pretty-print the proof JSON
+      final proofJson = const JsonEncoder.withIndent('  ').convert(proof.toJson());
+      
+      await file.writeAsString(proofJson);
+    } catch (e) {
+      throw ("Error exporting payment proof to file $filePath: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Import payment proof from file
+  ///
+  static Future<PaymentProof> importPaymentProof({
+    required String filePath,
+  }) async {
+    try {
+      final file = File(filePath);
+      
+      if (!await file.exists()) {
+        throw Exception("File does not exist: $filePath");
+      }
+      
+      final proofJson = await file.readAsString();
+      final proofData = jsonDecode(proofJson);
+      
+      return PaymentProof.fromJson(proofData);
+    } catch (e) {
+      throw ("Error importing payment proof from file $filePath: ${e.toString()}");
+    }
+  }
+
+  // ==================================================================
+  // ENHANCED SLATEPACK METHODS
+  // ==================================================================
+
+  ///
+  /// Enhanced slatepack encoding with encryption support
+  ///
+  static Future<({String slatepack, bool wasEncrypted, String? recipientAddress})> encodeSlatepackEnhanced({
+    required String slateJson,
+    String? recipientAddress,
+    bool encrypt = false,
+  }) async {
+    try {
+      // Use the existing encodeSlatepack function but with enhanced response
+      final slatepackResult = await lib_mwc.encodeSlatepack(
+        slateJson,
+        encrypt && recipientAddress != null ? recipientAddress : null,
+      );
+
+      if (slatepackResult.toUpperCase().contains("ERROR")) {
+        throw Exception("Error encoding slatepack: $slatepackResult");
+      }
+
+      return (
+        slatepack: slatepackResult,
+        wasEncrypted: encrypt && recipientAddress != null,
+        recipientAddress: encrypt ? recipientAddress : null,
+      );
+    } catch (e) {
+      throw ("Error encoding enhanced slatepack: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Enhanced slatepack decoding with encryption detection
+  ///
+  static Future<({
+    String slateJson,
+    bool wasEncrypted,
+    String? senderAddress,
+    String? recipientAddress,
+  })> decodeSlatepackEnhanced({
+    required String slatepack,
+    String? walletHandle,
+  }) async {
+    try {
+      // Use the existing decodeSlatepack function
+      final decodeResult = await lib_mwc.decodeSlatepack(slatepack);
+
+      if (decodeResult.toUpperCase().contains("ERROR")) {
+        throw Exception("Error decoding slatepack: $decodeResult");
+      }
+
+      final decodeResponse = jsonDecode(decodeResult);
+      
+      final wasEncrypted = decodeResponse['sender'] != null || decodeResponse['recipient'] != null;
+      
+      return (
+        slateJson: decodeResponse['slate_json'],
+        wasEncrypted: wasEncrypted,
+        senderAddress: decodeResponse['sender'],
+        recipientAddress: decodeResponse['recipient'],
+      );
+    } catch (e) {
+      throw ("Error decoding enhanced slatepack: ${e.toString()}");
+    }
+  }
+
+  ///
+  /// Create and encode slatepack in one operation
+  ///
+  static Future<({
+    String slatepack,
+    String slateId,
+    bool wasEncrypted,
+  })> createAndEncodeSlatepack({
+    required String wallet,
+    required int amount,
+    String? recipientAddress,
+    bool encrypt = false,
+    String message = "",
+    int minimumConfirmations = 10,
+    bool selectionStrategyIsUseAll = false,
+  }) async {
+    return await m.protect(() async {
+      try {
+        // First create the slate
+        final createResult = await lib_mwc.txCreate(
+          wallet,
+          amount,
+          minimumConfirmations,
+          selectionStrategyIsUseAll,
+          message,
+        );
+
+        if (createResult.toUpperCase().contains("ERROR")) {
+          throw Exception("Error creating slate: $createResult");
+        }
+
+        // Extract slate ID
+        final slateData = jsonDecode(createResult);
+        final slateId = slateData['id'] as String;
+
+        // Encode as slatepack
+        final encodeResult = await encodeSlatepackEnhanced(
+          slateJson: createResult,
+          recipientAddress: recipientAddress,
+          encrypt: encrypt,
+        );
+
+        return (
+          slatepack: encodeResult.slatepack,
+          slateId: slateId,
+          wasEncrypted: encodeResult.wasEncrypted,
+        );
+      } catch (e) {
+        throw ("Error creating and encoding slatepack: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Receive and decode slatepack in one operation
+  ///
+  static Future<({
+    String slatepack,
+    String slateId,
+    bool wasEncrypted,
+    String? senderAddress,
+  })> receiveAndEncodeSlatepack({
+    required String wallet,
+    required String inputSlatepack,
+    String message = "",
+    String? walletHandle,
+  }) async {
+    return await m.protect(() async {
+      try {
+        // First decode the slatepack
+        final decodeResult = await decodeSlatepackEnhanced(
+          slatepack: inputSlatepack,
+          walletHandle: walletHandle,
+        );
+
+        // Process the slate
+        final receiveResult = await lib_mwc.txReceive(
+          wallet,
+          decodeResult.slateJson,
+          message,
+        );
+
+        if (receiveResult.toUpperCase().contains("ERROR")) {
+          throw Exception("Error receiving slate: $receiveResult");
+        }
+
+        // Extract slate ID
+        final slateData = jsonDecode(receiveResult);
+        final slateId = slateData['id'] as String;
+
+        // Re-encode as slatepack (maintain encryption if it was encrypted)
+        final reencodeResult = await encodeSlatepackEnhanced(
+          slateJson: receiveResult,
+          recipientAddress: decodeResult.senderAddress, // Send back to original sender
+          encrypt: decodeResult.wasEncrypted,
+        );
+
+        return (
+          slatepack: reencodeResult.slatepack,
+          slateId: slateId,
+          wasEncrypted: decodeResult.wasEncrypted,
+          senderAddress: decodeResult.senderAddress,
+        );
+      } catch (e) {
+        throw ("Error receiving and encoding slatepack: ${e.toString()}");
+      }
+    });
+  }
+
+  ///
+  /// Check if a slatepack is encrypted
+  ///
+  static Future<bool> isSlatepackEncrypted(String slatepack) async {
+    try {
+      // Try to decode and check metadata
+      final decodeResult = await decodeSlatepackEnhanced(slatepack: slatepack);
+      return decodeResult.wasEncrypted;
+    } catch (e) {
+      // If we can't decode it at all, assume it might be encrypted
+      // and we don't have the right keys
+      return true;
+    }
+  }
+
+  ///
+  /// Get slatepack metadata without fully decoding
+  ///
+  static Future<Map<String, dynamic>> getSlatepackInfo(String slatepack) async {
+    try {
+      final decodeResult = await decodeSlatepackEnhanced(slatepack: slatepack);
+      
+      // Extract basic slate info
+      final slateData = jsonDecode(decodeResult.slateJson);
+      
+      return {
+        'isEncrypted': decodeResult.wasEncrypted,
+        'senderAddress': decodeResult.senderAddress,
+        'recipientAddress': decodeResult.recipientAddress,
+        'slateId': slateData['id'],
+        'amount': slateData['amount'],
+        'fee': slateData['fee'],
+        'participants': slateData['num_participants'],
+        'version': slateData['version_info']?['version'],
+      };
+    } catch (e) {
+      return {
+        'error': e.toString(),
+        'isEncrypted': null,
+        'canDecode': false,
+      };
     }
   }
 }
