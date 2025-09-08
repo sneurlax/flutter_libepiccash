@@ -795,7 +795,27 @@ pub unsafe extern "C" fn rust_delete_wallet(
     config: *const c_char,
 ) -> *const c_char  {
     let c_conf = CStr::from_ptr(config);
-    let _config = Config::from_str(c_conf.to_str().unwrap()).unwrap(); // TODO handle error here
+    let input_conf = match c_conf.to_str() {
+        Ok(conf) => conf,
+        Err(err) => {
+            let error_msg = format!("Invalid config string: {}", err);
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            return ptr;
+        }
+    };
+    
+    let _config = match Config::from_str(&input_conf.to_string()) {
+        Ok(config) => config,
+        Err(err) => {
+            let error_msg = format!("Wallet config error: {}", err);
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            return ptr;
+        }
+    };
 
     let result = match _delete_wallet(
         _config,
@@ -2145,6 +2165,30 @@ pub unsafe extern "C" fn rust_encode_slatepack(
     result
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn rust_encode_slatepack_enhanced(
+    wallet: *const c_char,
+    slate_json: *const c_char,
+    recipient_address: *const c_char,
+) -> *const c_char {
+    let result = match _encode_slatepack_enhanced(
+        wallet,
+        slate_json,
+        recipient_address,
+    ) {
+        Ok(slatepack_str) => {
+            slatepack_str
+        }, Err(e) => {
+            let error_msg = format!("Error: {}", &e.to_string());
+            let error_msg_ptr = CString::new(error_msg).unwrap();
+            let ptr = error_msg_ptr.as_ptr();
+            std::mem::forget(error_msg_ptr);
+            ptr
+        }
+    };
+    result
+}
+
 unsafe fn _encode_slatepack(
     slate_json: *const c_char,
     recipient_address: *const c_char,
@@ -2163,6 +2207,42 @@ unsafe fn _encode_slatepack(
     };
 
     let slatepack_str = slatepack::encode_slatepack(str_slate_json, recipient_opt)?;
+
+    let result = CString::new(slatepack_str).unwrap();
+    let ptr = result.as_ptr();
+    std::mem::forget(result);
+    Ok(ptr)
+}
+
+unsafe fn _encode_slatepack_enhanced(
+    wallet: *const c_char,
+    slate_json: *const c_char,
+    recipient_address: *const c_char,
+) -> Result<*const c_char, Error> {
+    let c_wallet = CStr::from_ptr(wallet);
+    let c_slate_json = CStr::from_ptr(slate_json);
+    let c_recipient_address = CStr::from_ptr(recipient_address);
+
+    let str_wallet = c_wallet.to_str().unwrap();
+    let str_slate_json = c_slate_json.to_str().unwrap();
+    let str_recipient_address = c_recipient_address.to_str().unwrap();
+
+    // Convert empty string to None for recipient address.
+    let recipient_opt = if str_recipient_address.is_empty() {
+        None
+    } else {
+        Some(str_recipient_address)
+    };
+
+    // Get wallet instance.
+    let wallet_inst = get_wallet(&str_wallet)?;
+
+    // Use the wallet-aware encode function.
+    let slatepack_str = slatepack::encode_slatepack_with_wallet(
+        str_slate_json, 
+        recipient_opt, 
+        Some(&wallet_inst)
+    )?;
 
     let result = CString::new(slatepack_str).unwrap();
     let ptr = result.as_ptr();

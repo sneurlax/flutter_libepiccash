@@ -50,10 +50,11 @@ abstract class Libmwc {
   }
 
   ///
-  /// Fetch the mnemonic For a new wallet (Only used in the example app)
+  /// Fetch the mnemonic for a new wallet (Only used in the example app)
+  /// 
+  /// Returns the mnemonic string for wallet recovery.
+  /// Throws an Exception if the mnemonic cannot be retrieved or is empty.
   ///
-  // TODO: ensure the above documentation comment is correct
-  // TODO: ensure this will always return the mnemonic. If not, this function should throw an exception
   //Function is used in _getMnemonicList()
   // wrap in mutex? -> would need to be Future<String>
   static String getMnemonic() {
@@ -120,10 +121,12 @@ abstract class Libmwc {
   }
 
   ///
-  /// Create a new mwc wallet.
+  /// Create a new MWC wallet.
+  /// 
+  /// Creates a new wallet with the specified configuration, mnemonic, password, and name.
+  /// Returns a status message upon successful creation.
+  /// Throws an Exception if wallet creation fails.
   ///
-  // TODO: Complete/modify the documentation comment above
-  // TODO: Should return a void future. On error this function should throw and exception
   static Future<String> initializeNewWallet({
     required String config,
     required String mnemonic,
@@ -1373,19 +1376,40 @@ abstract class Libmwc {
   // ==================================================================
 
   ///
-  /// Enhanced slatepack encoding with encryption support
+  /// Enhanced slatepack encoding with encryption support and proper key derivation.
   ///
   static Future<({String slatepack, bool wasEncrypted, String? recipientAddress})> encodeSlatepackEnhanced({
     required String slateJson,
     String? recipientAddress,
     bool encrypt = false,
+    String? wallet,
   }) async {
     try {
-      // Use the existing encodeSlatepack function but with enhanced response
-      final slatepackResult = await lib_mwc.encodeSlatepack(
-        slateJson,
-        encrypt && recipientAddress != null ? recipientAddress : null,
-      );
+      // For encrypted slatepacks, we need a wallet context.
+      if (encrypt && recipientAddress != null && wallet == null) {
+        // Try to get current wallet.
+        wallet = getCurrentWalletHandle();
+        if (wallet == null) {
+          throw Exception("Wallet context required for encrypted slatepacks");
+        }
+      }
+
+      String slatepackResult;
+      
+      if (encrypt && recipientAddress != null && wallet != null) {
+        // Use the enhanced function with wallet context for encrypted slatepacks.
+        slatepackResult = await lib_mwc.encodeSlatepackEnhanced(
+          wallet,
+          slateJson,
+          recipientAddress,
+        );
+      } else {
+        // Use the basic function for unencrypted slatepacks.
+        slatepackResult = await lib_mwc.encodeSlatepack(
+          slateJson,
+          null,
+        );
+      }
 
       if (slatepackResult.toUpperCase().contains("ERROR")) {
         throw Exception("Error encoding slatepack: $slatepackResult");

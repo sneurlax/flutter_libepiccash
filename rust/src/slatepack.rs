@@ -46,6 +46,10 @@ pub fn encode_slatepack(
 /// 
 /// # Returns
 /// * Result containing the armored slatepack string or error.
+/// 
+/// # Note
+/// For production use, always provide sender_secret derived from wallet.
+/// Using None for sender_secret in encrypted mode will return an error.
 pub fn encode_slatepack_with_keys(
     slate_json: &str,
     recipient_address: Option<&str>,
@@ -58,14 +62,12 @@ pub fn encode_slatepack_with_keys(
     let secp = Secp256k1::new();
     
     let (sender_key, sender_secret_key, recipient_key) = if let Some(recipient_addr) = recipient_address {
-        // For encrypted slatepacks, we need real keys.
+        // For encrypted slatepacks, we require a real sender secret key from wallet.
         let sender_secret_key = sender_secret
             .cloned()
-            .unwrap_or_else(|| {
-                // Generate a random sender key if none provided.
-                // TODO: In production, this should come from the wallet.
-                DalekSecretKey::from_bytes(&[2u8; 32]).unwrap()
-            });
+            .ok_or_else(|| Error::GenericError(
+                "Sender secret key is required for encrypted slatepacks. Please provide wallet context.".to_string()
+            ))?;
         
         let sender_public = DalekPublicKey::from(&sender_secret_key);
         
@@ -74,7 +76,7 @@ pub fn encode_slatepack_with_keys(
         
         (sender_public, sender_secret_key, Some(recipient_public))
     } else {
-        // For unencrypted slatepacks, use dummy keys.
+        // For unencrypted slatepacks, use dummy keys (this is acceptable for unencrypted).
         let dummy_secret = DalekSecretKey::from_bytes(&[1u8; 32])
             .map_err(|e| Error::GenericError(format!("Failed to create dummy key: {:?}", e)))?;
         let dummy_sender = DalekPublicKey::from(&dummy_secret);

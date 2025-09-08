@@ -354,6 +354,9 @@ typedef TxFinalizeFFI = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef EncodeSlatepack = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 typedef EncodeSlatepackFFI = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>);
 
+typedef EncodeSlatepackEnhanced = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+typedef EncodeSlatepackEnhancedFFI = Pointer<Utf8> Function(Pointer<Utf8>, Pointer<Utf8>, Pointer<Utf8>);
+
 typedef DecodeSlatepack = Pointer<Utf8> Function(Pointer<Utf8>);
 typedef DecodeSlatepackFFI = Pointer<Utf8> Function(Pointer<Utf8>);
 
@@ -414,6 +417,18 @@ final EncodeSlatepack _encodeSlatepack = mwcNative
 
 Future<String> encodeSlatepack(String slateJson, String? recipientAddress) async {
   return _encodeSlatepack(
+      slateJson.toNativeUtf8(),
+      (recipientAddress ?? "").toNativeUtf8())
+      .toDartString();
+}
+
+final EncodeSlatepackEnhanced _encodeSlatepackEnhanced = mwcNative
+    .lookup<NativeFunction<EncodeSlatepackEnhancedFFI>>("rust_encode_slatepack_enhanced")
+    .asFunction();
+
+Future<String> encodeSlatepackEnhanced(String wallet, String slateJson, String? recipientAddress) async {
+  return _encodeSlatepackEnhanced(
+      wallet.toNativeUtf8(),
       slateJson.toNativeUtf8(),
       (recipientAddress ?? "").toNativeUtf8())
       .toDartString();

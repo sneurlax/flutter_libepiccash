@@ -111,15 +111,22 @@ class _MwcMnemonicView extends State<MwcMnemonicView> {
 
   Future<String> _getWalletConfig(name) async {
     var config = {};
-    // TODO: make robust path finder for IOS and Android
-    // although getApplicationDocumentsDirectory should be enough for both.
+    
+    // Robust cross-platform path handling using path_provider.
+    Directory baseDir;
     if (Platform.isIOS) {
-      config["wallet_dir"] = "${(await getLibraryDirectory()).path}/mwc/$name/";
-      print("wallet dir ${config["wallet_dir"]}");
+      // On iOS, use Library directory for persistent app data.
+      baseDir = await getLibraryDirectory();
+    } else if (Platform.isAndroid) {
+      // On Android, use application documents directory.
+      baseDir = await getApplicationDocumentsDirectory();
     } else {
-      config["wallet_dir"] =
-          "/data/user/0/com.example.flutter_libmwc_example/app_flutter/$name/";
+      // For other platforms (Linux, Windows, macOS), use application documents directory.
+      baseDir = await getApplicationDocumentsDirectory();
     }
+    
+    config["wallet_dir"] = "${baseDir.path}/mwc/$name/";
+    print("wallet dir ${config["wallet_dir"]}");
     config["check_node_api_http_addr"] = "https://mwc713.mwc.mw:443";
     config["chain"] = "mainnet";
     config["account"] = "default";
