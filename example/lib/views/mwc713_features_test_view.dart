@@ -25,8 +25,6 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
   final _amountController = TextEditingController();
   final _messageController = TextEditingController();
   final _filePathController = TextEditingController();
-  final _slateJsonController = TextEditingController();
-  final _slatepackController = TextEditingController();
   final _transactionIdController = TextEditingController();
 
   MwcmqsAddress? _currentMwcmqsAddress;
@@ -35,7 +33,7 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 4, vsync: this);
+    _tabController = TabController(length: 3, vsync: this);
     _initializeDefaults();
   }
 
@@ -47,8 +45,6 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
     _amountController.dispose();
     _messageController.dispose();
     _filePathController.dispose();
-    _slateJsonController.dispose();
-    _slatepackController.dispose();
     _transactionIdController.dispose();
     super.dispose();
   }
@@ -122,7 +118,6 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
             Tab(text: 'MWCMQS'),
             Tab(text: 'File Transactions'),
             Tab(text: 'Payment Proofs'),
-            Tab(text: 'Encrypted Slatepacks'),
           ],
         ),
       ),
@@ -132,7 +127,6 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
           _buildMwcmqsTab(),
           _buildFileTransactionTab(),
           _buildPaymentProofTab(),
-          _buildEncryptedSlatepackTab(),
         ],
       ),
     );
@@ -473,132 +467,6 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
     );
   }
 
-  Widget _buildEncryptedSlatepackTab() {
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Encrypted Slatepacks Test',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 16),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Slate JSON Input',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _slateJsonController,
-                    decoration: const InputDecoration(
-                      labelText: 'Slate JSON',
-                      hintText: 'Paste slate JSON here',
-                    ),
-                    maxLines: 3,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Enhanced Slatepack Encoding',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _encodeSlatepackUnencrypted,
-                        child: const Text('Encode (Unencrypted)'),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _encodeSlatepackEncrypted,
-                        child: const Text('Encode (Encrypted)'),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Slatepack Input',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  TextField(
-                    controller: _slatepackController,
-                    decoration: const InputDecoration(
-                      labelText: 'Slatepack',
-                      hintText: 'Paste slatepack here',
-                    ),
-                    maxLines: 5,
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          Card(
-            child: Padding(
-              padding: const EdgeInsets.all(16),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Slatepack Operations',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _decodeSlatepackEnhanced,
-                        child: const Text('Decode Enhanced'),
-                      ),
-                      const SizedBox(width: 8),
-                      ElevatedButton(
-                        onPressed: _isLoading ? null : _isSlatepackEncrypted,
-                        child: const Text('Check Encryption'),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 8),
-                  ElevatedButton(
-                    onPressed: _isLoading ? null : _getSlatepackInfo,
-                    child: const Text('Get Slatepack Info'),
-                  ),
-                ],
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
 
   // MWCMQS Feature Tests.
   void _generateMwcmqsAddress() async {
@@ -904,122 +772,4 @@ class _MWC713FeaturesTestViewState extends State<MWC713FeaturesTestView>
     _setLoading(false);
   }
 
-  // Encrypted Slatepack Tests.
-  void _encodeSlatepackUnencrypted() async {
-    print('[MWC713] _encodeSlatepackUnencrypted pressed');
-    if (_slateJsonController.text.isEmpty) {
-      _setResult('Please enter slate JSON', Colors.red);
-      return;
-    }
-
-    _setLoading(true);
-    try {
-      print('[MWC713] Encoding slatepack (unencrypted)');
-      final result = await Libmwc.encodeSlatepackEnhanced(
-        slateJson: _slateJsonController.text,
-        encrypt: false,
-      );
-
-      setState(() {
-        _slatepackController.text = result.slatepack;
-      });
-
-      _setResult('Slatepack encoded (unencrypted)');
-    } catch (e) {
-      _setResult('Error: $e', Colors.red);
-    }
-    _setLoading(false);
-  }
-
-  void _encodeSlatepackEncrypted() async {
-    print('[MWC713] _encodeSlatepackEncrypted pressed');
-    if (_slateJsonController.text.isEmpty) {
-      _setResult('Please enter slate JSON', Colors.red);
-      return;
-    }
-    if (_recipientAddressController.text.isEmpty) {
-      _setResult('Please enter recipient address for encryption', Colors.red);
-      return;
-    }
-
-    _setLoading(true);
-    try {
-      print('[MWC713] Encoding slatepack (encrypted) for ${_recipientAddressController.text}');
-      final result = await Libmwc.encodeSlatepackEnhanced(
-        slateJson: _slateJsonController.text,
-        recipientAddress: _recipientAddressController.text,
-        encrypt: true,
-      );
-
-      setState(() {
-        _slatepackController.text = result.slatepack;
-      });
-
-      _setResult('Slatepack encoded (encrypted for ${result.recipientAddress})');
-    } catch (e) {
-      _setResult('Error: $e', Colors.red);
-    }
-    _setLoading(false);
-  }
-
-  void _decodeSlatepackEnhanced() async {
-    print('[MWC713] _decodeSlatepackEnhanced pressed');
-    if (_slatepackController.text.isEmpty) {
-      _setResult('Please enter slatepack', Colors.red);
-      return;
-    }
-
-    _setLoading(true);
-    try {
-      print('[MWC713] Decoding slatepack (enhanced)');
-      final result = await Libmwc.decodeSlatepackEnhanced(
-        slatepack: _slatepackController.text,
-      );
-
-      setState(() {
-        _slateJsonController.text = result.slateJson;
-      });
-
-      _setResult('Slatepack decoded. Encrypted=${result.wasEncrypted}');
-    } catch (e) {
-      _setResult('Error: $e', Colors.red);
-    }
-    _setLoading(false);
-  }
-
-  void _isSlatepackEncrypted() async {
-    print('[MWC713] _isSlatepackEncrypted pressed');
-    if (_slatepackController.text.isEmpty) {
-      _setResult('Please enter slatepack', Colors.red);
-      return;
-    }
-
-    _setLoading(true);
-    try {
-      print('[MWC713] Checking slatepack encryption');
-      final isEncrypted = await Libmwc.isSlatepackEncrypted(_slatepackController.text);
-      _setResult('Slatepack encryption status: ${isEncrypted ? 'Encrypted' : 'Unencrypted'}');
-    } catch (e) {
-      _setResult('Error: $e', Colors.red);
-    }
-    _setLoading(false);
-  }
-
-  void _getSlatepackInfo() async {
-    print('[MWC713] _getSlatepackInfo pressed');
-    if (_slatepackController.text.isEmpty) {
-      _setResult('Please enter slatepack', Colors.red);
-      return;
-    }
-
-    _setLoading(true);
-    try {
-      print('[MWC713] Getting slatepack info');
-      final info = await Libmwc.getSlatepackInfo(_slatepackController.text);
-      _setResult('Slatepack Info: ID=${info['slateId']}, Amount=${info['amount']}, Encrypted=${info['isEncrypted']}');
-    } catch (e) {
-      _setResult('Error: $e', Colors.red);
-    }
-    _setLoading(false);
-  }
 }

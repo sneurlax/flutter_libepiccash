@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_libmwc/flutter_libmwc.dart';
+import 'package:flutter_libmwc/lib.dart';
 import 'package:flutter_libmwc/models/slate.dart';
 
 class SlatepackDemoView extends StatefulWidget {
@@ -162,6 +163,166 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
     );
   }
 
+  // Enhanced slatepack methods from MWC713 features
+  void _encodeSlatepackUnencrypted() async {
+    if (_slateController.text.isEmpty) {
+      _showSnackBar('Please enter slate JSON', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await Libmwc.encodeSlatepackEnhanced(
+        slateJson: _slateController.text,
+        encrypt: false,
+      );
+
+      setState(() {
+        _slatepackController.text = result.slatepack;
+        _lastResult = 'Slatepack encoded (unencrypted)';
+      });
+      _showSnackBar('Slatepack encoded (unencrypted)', Colors.green);
+    } catch (e) {
+      setState(() {
+        _lastResult = 'Error: $e';
+      });
+      _showSnackBar('Error: $e', Colors.red);
+    }
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  void _encodeSlatepackEncrypted() async {
+    if (_slateController.text.isEmpty) {
+      _showSnackBar('Please enter slate JSON', Colors.red);
+      return;
+    }
+    if (_recipientAddressController.text.isEmpty) {
+      _showSnackBar(
+          'Please enter recipient address for encryption', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await Libmwc.encodeSlatepackEnhanced(
+        slateJson: _slateController.text,
+        recipientAddress: _recipientAddressController.text,
+        encrypt: true,
+      );
+
+      setState(() {
+        _slatepackController.text = result.slatepack;
+        _lastResult =
+            'Slatepack encoded (encrypted for ${result.recipientAddress})';
+      });
+      _showSnackBar('Slatepack encoded (encrypted)', Colors.green);
+    } catch (e) {
+      setState(() {
+        _lastResult = 'Error: $e';
+      });
+      _showSnackBar('Error: $e', Colors.red);
+    }
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  void _decodeSlatepackEnhanced() async {
+    if (_slatepackController.text.isEmpty) {
+      _showSnackBar('Please enter slatepack', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final result = await Libmwc.decodeSlatepackEnhanced(
+        slatepack: _slatepackController.text,
+      );
+
+      setState(() {
+        _slateController.text = result.slateJson;
+        _lastResult = 'Slatepack decoded. Encrypted=${result.wasEncrypted}';
+      });
+      _showSnackBar('Slatepack decoded', Colors.green);
+    } catch (e) {
+      setState(() {
+        _lastResult = 'Error: $e';
+      });
+      _showSnackBar('Error: $e', Colors.red);
+    }
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  void _isSlatepackEncrypted() async {
+    if (_slatepackController.text.isEmpty) {
+      _showSnackBar('Please enter slatepack', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final isEncrypted =
+          await Libmwc.isSlatepackEncrypted(_slatepackController.text);
+      setState(() {
+        _lastResult =
+            'Slatepack encryption status: ${isEncrypted ? 'Encrypted' : 'Unencrypted'}';
+      });
+      _showSnackBar('Encryption check complete', Colors.blue);
+    } catch (e) {
+      setState(() {
+        _lastResult = 'Error: $e';
+      });
+      _showSnackBar('Error: $e', Colors.red);
+    }
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
+  void _getSlatepackInfo() async {
+    if (_slatepackController.text.isEmpty) {
+      _showSnackBar('Please enter slatepack', Colors.red);
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      final info = await Libmwc.getSlatepackInfo(_slatepackController.text);
+      setState(() {
+        _lastResult =
+            'Slatepack Info: ID=${info['slateId']}, Amount=${info['amount']}, Encrypted=${info['isEncrypted']}';
+      });
+      _showSnackBar('Slatepack info retrieved', Colors.blue);
+    } catch (e) {
+      setState(() {
+        _lastResult = 'Error: $e';
+      });
+      _showSnackBar('Error: $e', Colors.red);
+    }
+    setState(() {
+      _isLoading = false;
+    });
+  }
+
   void _generateSampleSlate() {
     final sampleSlate = '''
 {
@@ -304,33 +465,89 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
           ),
           const SizedBox(height: 16),
 
-          // Action Buttons.
-          Row(
-            children: [
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _encodeSlatepack,
-                  icon: const Icon(Icons.lock),
-                  label: const Text('Encode to Slatepack'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.green,
-                    foregroundColor: Colors.white,
+          // Enhanced Encoding Buttons.
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Enhanced Slatepack Encoding',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _decodeSlatepack,
-                  icon: const Icon(Icons.lock_open),
-                  label: const Text('Decode from Slatepack'),
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.orange,
-                    foregroundColor: Colors.white,
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _isLoading ? null : _encodeSlatepackUnencrypted,
+                          icon: const Icon(Icons.lock_open),
+                          label: const Text('Encode (Unencrypted)'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _isLoading ? null : _encodeSlatepackEncrypted,
+                          icon: const Icon(Icons.lock),
+                          label: const Text('Encode (Encrypted)'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed:
+                              _isLoading ? null : _decodeSlatepackEnhanced,
+                          icon: const Icon(Icons.lock_open),
+                          label: const Text('Decode Enhanced'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.orange,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isLoading ? null : _isSlatepackEncrypted,
+                          icon: const Icon(Icons.info),
+                          label: const Text('Check Encryption'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.purple,
+                            foregroundColor: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  ElevatedButton.icon(
+                    onPressed: _isLoading ? null : _getSlatepackInfo,
+                    icon: const Icon(Icons.info_outline),
+                    label: const Text('Get Slatepack Info'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.indigo,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
           const SizedBox(height: 16),
 
@@ -422,18 +639,18 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'How to use:',
+                    'Enhanced Slatepack Features:',
                     style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                   ),
                   SizedBox(height: 8),
                   Text('1. Click "Sample" to generate a test slate JSON'),
-                  Text(
-                      '2. Optionally enter a recipient address for encryption'),
-                  Text(
-                      '3. Click "Encode to Slatepack" to convert slate to slatepack format'),
-                  Text('4. Use "Copy" to copy the slatepack for sharing'),
-                  Text(
-                      '5. Use "Decode from Slatepack" to convert back to slate JSON'),
+                  Text('2. Enter recipient address for encrypted slatepacks'),
+                  Text('3. Use "Encode (Unencrypted)" for plain slatepacks'),
+                  Text('4. Use "Encode (Encrypted)" for secure transmission'),
+                  Text('5. Use "Decode Enhanced" with improved error handling'),
+                  Text('6. "Check Encryption" to verify slatepack security'),
+                  Text('7. "Get Slatepack Info" for detailed metadata'),
+                  Text('8. Use "Copy" buttons to share slatepacks easily'),
                 ],
               ),
             ),
