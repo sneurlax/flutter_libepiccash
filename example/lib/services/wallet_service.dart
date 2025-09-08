@@ -5,6 +5,7 @@ import 'package:flutter_libmwc/mwc.dart' as mwc;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:http/http.dart' as http;
 
 class WalletResult {
   final bool success;
@@ -146,6 +147,75 @@ class WalletService {
 
   // In-memory wallet handle for the current session.
   static String? _currentWalletHandle;
+
+  /// Check network connectivity to MWC node using JSON-RPC API.
+  static Future<bool> checkNodeConnectivity({int timeoutSeconds = 10}) async {
+    try {
+      print('=== Checking Node Connectivity ===');
+      print('Testing connection to: $defaultNodeUrl');
+      
+      // Use JSON-RPC v2 API to get chain tip (get_tip method).
+      final uri = Uri.parse('$defaultNodeUrl/v2/foreign');
+      final requestBody = json.encode({
+        "jsonrpc": "2.0",
+        "method": "get_tip",
+        "params": [],
+        "id": 1
+      });
+      
+      final response = await http.post(
+        uri,
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+        },
+        body: requestBody,
+      ).timeout(Duration(seconds: timeoutSeconds));
+      
+      print('Node response status: ${response.statusCode}');
+      print('Node response body: ${response.body}');
+      
+      if (response.statusCode == 200) {
+        final responseData = json.decode(response.body);
+        if (responseData.containsKey('result')) {
+          print('Node connectivity: SUCCESS - Chain tip received');
+          return true;
+        } else if (responseData.containsKey('error')) {
+          print('Node connectivity: API ERROR - ${responseData['error']}');
+          return false;
+        }
+      }
+      
+      print('Node connectivity: FAILED (status: ${response.statusCode})');
+      return false;
+    } catch (e) {
+      print('Node connectivity: ERROR - $e');
+      
+      // Fallback: try simple HTTP connectivity test.
+      try {
+        print('Trying fallback connectivity test...');
+        final uri = Uri.parse(defaultNodeUrl);
+        final response = await http.get(uri).timeout(Duration(seconds: 5));
+        if (response.statusCode < 500) {
+          print('Fallback connectivity: SUCCESS (HTTP reachable)');
+          return true;
+        }
+      } catch (fallbackError) {
+        print('Fallback connectivity: FAILED - $fallbackError');
+      }
+      
+      return false;
+    }
+  }
+
+  /// Validate network connectivity before operations requiring node access.
+  static Future<bool> _validateNodeConnectivity() async {
+    final isConnected = await checkNodeConnectivity();
+    if (!isConnected) {
+      print('WARNING: Node connectivity check failed - operations may not work properly');
+    }
+    return isConnected;
+  }
 
   static Future<String> _getWalletDirectory(String walletName) async {
     if (Platform.isIOS) {
@@ -513,7 +583,7 @@ class WalletService {
   /// Get wallet information and balance.
   static Future<Map<String, dynamic>?> getWalletInfo(
     String walletName, {
-    int refreshFromNode = 0,
+    int refreshFromNode = 1,  // Changed default to 1 (enable blockchain refresh).
     int minimumConfirmations = 10,
   }) async {
     try {
@@ -522,10 +592,20 @@ class WalletService {
       print('Refresh From Node: $refreshFromNode');
       print('Minimum Confirmations: $minimumConfirmations');
 
-      // Check if we have a wallet handle.
-      if (_currentWalletHandle == null) {
-        print('No wallet handle available - wallet may not be opened');
-        return {'error': 'Wallet not opened. Please open the wallet first.'};
+      // Validate wallet state first.
+      if (!await _validateWalletState(walletName)) {
+        print('Wallet state validation failed');
+        return {'error': 'Wallet not opened or invalid state. Please open the wallet first.'};
+      }
+
+      // Check network connectivity if refreshing from node.
+      if (refreshFromNode > 0) {
+        final networkOk = await _validateNodeConnectivity();
+        if (!networkOk) {
+          print('WARNING: Network connectivity issues detected - proceeding with cached data only');
+          // Fall back to local data only.
+          refreshFromNode = 0;
+        }
       }
 
       print('Using wallet handle, calling mwc.getWalletInfo...');
@@ -538,12 +618,17 @@ class WalletService {
 
       final decoded = json.decode(result);
       print('Decoded wallet info: $decoded');
+      
+      // Add network status to response.
+      decoded['network_refreshed'] = refreshFromNode > 0;
+      decoded['node_url'] = defaultNodeUrl;
+      
       return decoded;
     } catch (e, stackTrace) {
       print('=== Wallet Info Error ===');
       print('Error: $e');
       print('Stack Trace: $stackTrace');
-      return null;
+      return {'error': 'Failed to get wallet info: $e'};
     }
   }
 
@@ -579,29 +664,42 @@ class WalletService {
   /// Get wallet transactions
   static Future<List<Map<String, dynamic>>?> getWalletTransactions(
     String walletName, {
-    int refreshFromNode = 0,
+    int refreshFromNode = 1,  // Changed default to 1 (enable blockchain refresh).
   }) async {
     try {
       print('=== Getting Wallet Transactions Debug ===');
       print('Wallet Name: $walletName, Refresh From Node: $refreshFromNode');
 
-      // Check if we have a wallet handle.
-      if (_currentWalletHandle == null) {
-        print('No wallet handle available - wallet may not be opened');
+      // Validate wallet state first.
+      if (!await _validateWalletState(walletName)) {
+        print('Wallet state validation failed');
         return null;
+      }
+
+      // Check network connectivity if refreshing from node.
+      if (refreshFromNode > 0) {
+        final networkOk = await _validateNodeConnectivity();
+        if (!networkOk) {
+          print('WARNING: Network connectivity issues detected - proceeding with cached data only');
+          // Fall back to local data only
+          refreshFromNode = 0;
+        }
       }
 
       print('Using wallet handle, calling mwc.getTransactions...');
       final result = await mwc.getTransactions(_currentWalletHandle!,
-          refreshFromNode); // Use wallet handle instead of config.
+          refreshFromNode);
       print('Raw transaction result: "$result"');
 
       final data = json.decode(result);
       print('Decoded transaction data: $data');
 
       if (data is List) {
-        return List<Map<String, dynamic>>.from(data);
+        final transactions = List<Map<String, dynamic>>.from(data);
+        print('Found ${transactions.length} transactions');
+        return transactions;
       }
+      print('No transactions found or invalid data format');
       return [];
     } catch (e, stackTrace) {
       print('=== Wallet Transactions Error ===');
@@ -642,30 +740,84 @@ class WalletService {
     }
   }
 
-  /// Scan wallet outputs.
+  /// Scan wallet outputs with improved automatic scanning.
   static Future<bool> scanWalletOutputs(
     String walletName, {
     int startHeight = 0,
-    int numberOfBlocks = 100,
+    int numberOfBlocks = 1000,
   }) async {
     try {
       print('=== Scanning Wallet Outputs Debug ===');
       print(
           'Wallet Name: $walletName, Start Height: $startHeight, Blocks: $numberOfBlocks');
 
-      // Check if we have a wallet handle.
-      if (_currentWalletHandle == null) {
-        print('No wallet handle available - wallet may not be opened');
+      // Validate wallet state first.
+      if (!await _validateWalletState(walletName)) {
+        print('Wallet state validation failed');
+        return false;
+      }
+
+      // Check network connectivity before scanning.
+      final networkOk = await _validateNodeConnectivity();
+      if (!networkOk) {
+        print('ERROR: Network connectivity required for wallet scanning');
         return false;
       }
 
       print('Using wallet handle, calling mwc.scanOutPuts...');
-      await mwc.scanOutPuts(_currentWalletHandle!, startHeight,
-          numberOfBlocks); // Use wallet handle instead of config.
+      await mwc.scanOutPuts(_currentWalletHandle!, startHeight, numberOfBlocks);
       print('Scan outputs completed successfully');
       return true;
     } catch (e, stackTrace) {
       print('=== Scan Outputs Error ===');
+      print('Error: $e');
+      print('Stack Trace: $stackTrace');
+      return false;
+    }
+  }
+
+  /// Perform comprehensive wallet scan from genesis or restoration point.
+  static Future<bool> performComprehensiveScan(String walletName) async {
+    try {
+      print('=== Performing Comprehensive Wallet Scan ===');
+      
+      // Get current chain height to determine scan range.
+      final chainHeight = await getChainHeight(walletName);
+      if (chainHeight == null || chainHeight <= 0) {
+        print('WARNING: Unable to get chain height, using default scan range');
+        return await scanWalletOutputs(walletName, startHeight: 0, numberOfBlocks: 10000);
+      }
+
+      print('Current chain height: $chainHeight');
+      
+      // Scan the entire blockchain history in chunks.
+      const int chunkSize = 5000;
+      int currentHeight = 0;
+      
+      while (currentHeight < chainHeight) {
+        final remainingBlocks = chainHeight - currentHeight;
+        final blocksToScan = remainingBlocks < chunkSize ? remainingBlocks : chunkSize;
+        
+        print('Scanning blocks $currentHeight to ${currentHeight + blocksToScan}');
+        
+        final success = await scanWalletOutputs(
+          walletName,
+          startHeight: currentHeight,
+          numberOfBlocks: blocksToScan,
+        );
+        
+        if (!success) {
+          print('ERROR: Scan failed at height $currentHeight');
+          return false;
+        }
+        
+        currentHeight += blocksToScan;
+      }
+      
+      print('Comprehensive scan completed successfully');
+      return true;
+    } catch (e, stackTrace) {
+      print('=== Comprehensive Scan Error ===');
       print('Error: $e');
       print('Stack Trace: $stackTrace');
       return false;
@@ -680,6 +832,49 @@ class WalletService {
   /// Check if there is a wallet open (has current wallet handle).
   static Future<bool> hasOpenWallet() async {
     return _currentWalletHandle != null && _currentWalletHandle!.isNotEmpty;
+  }
+
+  /// Validate wallet is properly opened and ready for operations
+  static Future<bool> _validateWalletState(String walletName) async {
+    print('=== Validating Wallet State ===');
+    print('Wallet Name: $walletName');
+    print('Has Handle: ${_currentWalletHandle != null}');
+    
+    if (_currentWalletHandle == null || _currentWalletHandle!.isEmpty) {
+      print('ERROR: No wallet handle - wallet not opened');
+      return false;
+    }
+    
+    final currentWallet = await getCurrentWallet();
+    if (currentWallet != walletName) {
+      print('ERROR: Current wallet mismatch - expected: $walletName, current: $currentWallet');
+      return false;
+    }
+    
+    print('Wallet state validation: SUCCESS');
+    return true;
+  }
+
+  /// Attempt to automatically open wallet if not already open.
+  static Future<bool> _ensureWalletOpen(String walletName) async {
+    if (await _validateWalletState(walletName)) {
+      return true; // Already open and valid
+    }
+    
+    print('=== Attempting Auto-Open Wallet ===');
+    print('Wallet needs to be opened: $walletName');
+    
+    // Check if we have stored config for this wallet.
+    final configJson = await _StorageService.read(key: '${_configKey}_$walletName');
+    if (configJson == null) {
+      print('ERROR: No stored config found for wallet: $walletName');
+      return false;
+    }
+    
+    // For now, we can't auto-open without password.
+    // This would require storing encrypted passwords or prompting user.
+    print('WARNING: Wallet requires password to open - auto-open not possible');
+    return false;
   }
   
   /// Get the current wallet handle for use with FFI operations.

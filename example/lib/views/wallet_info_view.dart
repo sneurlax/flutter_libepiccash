@@ -21,6 +21,7 @@ class _WalletInfoViewState extends State<WalletInfoView> {
   bool _isLoading = false;
   bool _showMnemonic = false;
   bool _isScanning = false;
+  String _loadingStatus = '';
 
   @override
   void initState() {
@@ -31,11 +32,18 @@ class _WalletInfoViewState extends State<WalletInfoView> {
   void _loadWalletInfo() async {
     setState(() {
       _isLoading = true;
+      _loadingStatus = 'Initializing...';
     });
 
     try {
       print('=== Loading Wallet Info Debug ===');
-      // Get current wallet.
+      
+      // Step 1: Get current wallet.
+      setState(() {
+        _loadingStatus = 'Getting wallet information...';
+      });
+      await Future.delayed(const Duration(milliseconds: 100)); // Allow UI to update.
+      
       print('Getting current wallet...');
       final currentWallet = await WalletService.getCurrentWallet();
       print('Current wallet: $currentWallet');
@@ -49,7 +57,12 @@ class _WalletInfoViewState extends State<WalletInfoView> {
         // Note: We would need the password here, but for now we'll try without opening.
         // TODO: Consider adding password prompt or storing session state.
 
-        // Load each piece of information separately with individual error handling.
+        // Step 2: Load wallet info.
+        setState(() {
+          _loadingStatus = 'Synchronizing with blockchain...';
+        });
+        await Future.delayed(const Duration(milliseconds: 100)); // Allow UI to update.
+        
         Map<String, dynamic>? walletInfo;
         try {
           print('Getting wallet info...');
@@ -73,6 +86,12 @@ class _WalletInfoViewState extends State<WalletInfoView> {
           walletInfo = null;
         }
 
+        // Step 3: Load additional wallet data.
+        setState(() {
+          _loadingStatus = 'Loading wallet address...';
+        });
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to update.
+
         String? walletAddress;
         try {
           print('Getting wallet address...');
@@ -82,6 +101,11 @@ class _WalletInfoViewState extends State<WalletInfoView> {
           print('Wallet address failed: $e');
           walletAddress = null;
         }
+
+        setState(() {
+          _loadingStatus = 'Loading transactions...';
+        });
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to update.
 
         List<Map<String, dynamic>>? transactions;
         try {
@@ -94,6 +118,11 @@ class _WalletInfoViewState extends State<WalletInfoView> {
           transactions = null;
         }
 
+        setState(() {
+          _loadingStatus = 'Getting network status...';
+        });
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to update.
+
         int? chainHeight;
         try {
           print('Getting chain height...');
@@ -103,6 +132,11 @@ class _WalletInfoViewState extends State<WalletInfoView> {
           print('Chain height failed: $e');
           chainHeight = null;
         }
+
+        setState(() {
+          _loadingStatus = 'Finalizing...';
+        });
+        await Future.delayed(const Duration(milliseconds: 50)); // Allow UI to update
 
         setState(() {
           _walletInfo = walletInfo;
@@ -125,6 +159,7 @@ class _WalletInfoViewState extends State<WalletInfoView> {
     } finally {
       setState(() {
         _isLoading = false;
+        _loadingStatus = '';
       });
     }
   }
@@ -212,7 +247,37 @@ class _WalletInfoViewState extends State<WalletInfoView> {
         foregroundColor: Colors.white,
       ),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
+          ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const CircularProgressIndicator(
+                    strokeWidth: 3,
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    _loadingStatus.isEmpty ? 'Loading...' : _loadingStatus,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    textAlign: TextAlign.center,
+                  ),
+                  if (_loadingStatus.contains('Synchronizing'))
+                    const Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: Text(
+                        'This may take 10-15 seconds',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: Colors.grey,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                ],
+              ),
+            )
           : ListView(
               padding: const EdgeInsets.all(16),
               children: [
