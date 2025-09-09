@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter_libmwc/lib.dart' as mwc_lib;
 import 'package:flutter_libmwc/mwc.dart' as mwc;
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:path_provider/path_provider.dart';
@@ -367,6 +368,8 @@ class WalletService {
 
         // Non-JSON, non-error response - assume it's a wallet handle.
         _currentWalletHandle = result;
+        // Also set it in the main library's WalletManager for unified access
+        mwc_lib.Libmwc.setCurrentWalletHandle(result);
         print(
             'Wallet handle stored from initWallet: ${result.length} characters');
         print(
@@ -449,6 +452,8 @@ class WalletService {
 
       // Store the wallet handle for subsequent operations.
       _currentWalletHandle = result;
+      // Also set it in the main library's WalletManager for unified access
+      mwc_lib.Libmwc.setCurrentWalletHandle(result);
       print('Wallet handle stored: ${result.length} characters');
 
       await _StorageService.write(key: _currentWalletKey, value: walletName);
@@ -547,6 +552,8 @@ class WalletService {
 
         // Non-JSON, non-error response - assume it's a wallet handle.
         _currentWalletHandle = result;
+        // Also set it in the main library's WalletManager for unified access
+        mwc_lib.Libmwc.setCurrentWalletHandle(result);
         print(
             'Wallet handle stored from recoverWallet: ${result.length} characters');
         print(

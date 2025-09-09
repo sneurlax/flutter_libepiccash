@@ -164,13 +164,13 @@ class _MwcTransactionView extends State<MwcTransactionView> {
                       const SizedBox(height: 16),
                       ElevatedButton.icon(
                         onPressed: () async {
-                          setState(() {
-                            await Navigator.of(context).push(
-                              MaterialPageRoute<dynamic>(
-                                builder: (context) => const OpenWalletView(),
-                              ),
-                            );
-                          });
+                          await Navigator.of(context).push(
+                            MaterialPageRoute<dynamic>(
+                              builder: (context) => const OpenWalletView(),
+                            ),
+                          );
+                          // The page will rebuild automatically if it's stateful
+                          // or you can trigger a rebuild here if needed
                         },
                         icon: const Icon(Icons.login),
                         label: const Text('Open Wallet'),

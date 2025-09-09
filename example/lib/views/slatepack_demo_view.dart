@@ -175,7 +175,7 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
     });
 
     try {
-      final result = await Libmwc.encodeSlatepackEnhanced(
+      final result = await Libmwc.encodeSlatepack(
         slateJson: _slateController.text,
         encrypt: false,
       );
@@ -212,7 +212,7 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
     });
 
     try {
-      final result = await Libmwc.encodeSlatepackEnhanced(
+      final result = await Libmwc.encodeSlatepack(
         slateJson: _slateController.text,
         recipientAddress: _recipientAddressController.text,
         encrypt: true,
@@ -235,7 +235,7 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
     });
   }
 
-  void _decodeSlatepackEnhanced() async {
+  void _decodeSlatepackAdvanced() async {
     if (_slatepackController.text.isEmpty) {
       _showSnackBar('Please enter slatepack', Colors.red);
       return;
@@ -246,7 +246,7 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
     });
 
     try {
-      final result = await Libmwc.decodeSlatepackEnhanced(
+      final result = await Libmwc.decodeSlatepack(
         slatepack: _slatepackController.text,
       );
 
@@ -512,9 +512,9 @@ class _SlatepackDemoViewState extends State<SlatepackDemoView> {
                       Expanded(
                         child: ElevatedButton.icon(
                           onPressed:
-                              _isLoading ? null : _decodeSlatepackEnhanced,
+                              _isLoading ? null : _decodeSlatepackAdvanced,
                           icon: const Icon(Icons.lock_open),
-                          label: const Text('Decode Enhanced'),
+                          label: const Text('Decode'),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: Colors.orange,
                             foregroundColor: Colors.white,

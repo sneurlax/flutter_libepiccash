@@ -13,7 +13,7 @@ mod slatepack;
 
 use mwc_wallet_api::{self, Owner};
 use mwc_wallet_config::{WalletConfig, MQSConfig};
-use mwc_wallet_libwallet::api_impl::types::{InitTxArgs, InitTxSendArgs};
+use mwc_wallet_libwallet::api_impl::types::{InitTxArgs, InitTxSendArgs, PaymentProof};
 use mwc_wallet_libwallet::api_impl::owner;
 use mwc_wallet_impls::{DefaultLCProvider, DefaultWalletImpl, MWCMQSAddress, Address, AddressType, HTTPNodeClient};
 
@@ -2365,28 +2365,28 @@ unsafe fn _generate_payment_proof(
         Some(str_message.to_string())
     };
 
-    // Generate payment proof using MWC wallet library.
+    // Retrieve payment proof using MWC wallet library.
     let api = Owner::new(wallet.clone(), None, None);
     
-    let proof_result = match api.create_tx_proof(
+    let proof_result = match api.retrieve_payment_proof(
         sek_key.as_ref(), 
-        None,  // tx_id - let MWC find by UUID.
+        true,  // refresh_from_node
+        None,  // tx_id - use UUID instead
         Some(tx_uuid),
-        message_opt.as_ref()
     ) {
         Ok(proof_data) => proof_data,
-        Err(e) => return Err(Error::GenericError(format!("Failed to create payment proof: {}", e))),
+        Err(e) => return Err(Error::GenericError(format!("Failed to retrieve payment proof: {}", e))),
     };
 
-    // Format the proof response to match PaymentProof model.
+    // Format the proof response to match expected format.
     let response = serde_json::json!({
         "success": true,
         "proof": {
             "transactionId": str_tx_id,
-            "senderAddress": proof_result.sender,
-            "receiverAddress": proof_result.receiver,
+            "senderAddress": format!("{:?}", proof_result.sender_address),
+            "receiverAddress": format!("{:?}", proof_result.recipient_address),
             "amount": proof_result.amount,
-            "kernelExcess": proof_result.excess,
+            "kernelExcess": format!("{:?}", proof_result.excess),
             "kernelSignature": proof_result.recipient_sig,
             "message": message_opt,
             "timestamp": chrono::Utc::now().to_rfc3339(),
@@ -2448,40 +2448,27 @@ unsafe fn _verify_payment_proof(
 
     ensure_wallet!(wlt, wallet);
 
-    // Parse the proof JSON.
-    let proof_data: serde_json::Value = serde_json::from_str(str_proof_json)
-        .map_err(|e| Error::GenericError(format!("Invalid proof JSON: {}", e)))?;
-
-    // Convert proof data to MWC proof format.
-    let tx_proof = mwc_wallet_libwallet::api_impl::types::TxProof {
-        address: proof_data["receiverAddress"].as_str().unwrap_or("").to_string(),
-        message: proof_data["message"].as_str().map(|s| s.to_string()),
-        signature: proof_data["proofSignature"].as_str().unwrap_or("").to_string(),
-        challenge: proof_data["kernelExcess"].as_str().unwrap_or("").to_string(),
-        excess: proof_data["kernelExcess"].as_str().unwrap_or("").to_string(),
-        sender_sig: proof_data["proofSignature"].as_str().unwrap_or("").to_string(),
-        recipient_sig: proof_data["kernelSignature"].as_str().unwrap_or("").to_string(),
-        amount: proof_data["amount"].as_u64().unwrap_or(0),
-        sender: proof_data["senderAddress"].as_str().unwrap_or("").to_string(),
-        receiver: proof_data["receiverAddress"].as_str().unwrap_or("").to_string(),
-    };
+    // Parse proof data directly as PaymentProof (deserialize from JSON)
+    let payment_proof: PaymentProof = serde_json::from_str(str_proof_json)
+        .map_err(|e| Error::GenericError(format!("Invalid PaymentProof JSON: {}", e)))?;
 
     // Verify the proof using MWC wallet library.
     let api = Owner::new(wallet.clone(), None, None);
     
-    let verification_result = match api.verify_tx_proof(
+    let verification_result = match api.verify_payment_proof(
         sek_key.as_ref(),
-        &tx_proof
+        &payment_proof
     ) {
-        Ok(valid) => valid,
+        Ok((kernel_valid, signature_valid)) => (kernel_valid, signature_valid),
         Err(e) => return Err(Error::GenericError(format!("Failed to verify payment proof: {}", e))),
     };
 
     // Create verification response.
+    let (kernel_valid, signature_valid) = verification_result;
     let response = serde_json::json!({
-        "isValid": verification_result,
-        "kernelFound": verification_result, // Assume kernel found if verification passes.
-        "signatureValid": verification_result,
+        "isValid": kernel_valid && signature_valid,
+        "kernelFound": kernel_valid,
+        "signatureValid": signature_valid,
         "amountMatches": true, // TODO: Add amount checking logic if needed.
         "errorMessage": null
     });

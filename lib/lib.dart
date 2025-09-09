@@ -1027,7 +1027,7 @@ abstract class Libmwc {
   }
 
   ///
-  /// Enhanced MWCMQS listener with configuration
+  /// Start MWCMQS listener with configuration
   ///
   static Future<void> startMwcmqsListener({
     required String wallet,
@@ -1223,20 +1223,18 @@ abstract class Libmwc {
     required String slateJson,
     required String outputPath,
     String? recipientAddress,
+    bool encrypt = false,
   }) async {
     try {
-      // Encode the slatepack using existing function
-      final slatepackResult = await lib_mwc.encodeSlatepack(
-        slateJson,
-        recipientAddress,
+      // Encode the slatepack.
+      final encodeResult = await encodeSlatepack(
+        slateJson: slateJson,
+        recipientAddress: recipientAddress,
+        encrypt: encrypt,
       );
 
-      if (slatepackResult.toUpperCase().contains("ERROR")) {
-        throw Exception("Error encoding slatepack: $slatepackResult");
-      }
-
-      // Write slatepack to file
-      await _writeSlateToFile(outputPath, slatepackResult);
+      // Write slatepack to file.
+      await _writeSlateToFile(outputPath, encodeResult.slatepack);
     } catch (e) {
       throw ("Error encoding slatepack to file: ${e.toString()}");
     }
@@ -1245,21 +1243,24 @@ abstract class Libmwc {
   ///
   /// Decode slatepack from file
   ///
-  static Future<Map<String, dynamic>> decodeSlatepackFromFile({
+  static Future<({
+    String slateJson,
+    bool wasEncrypted,
+    String? senderAddress,
+    String? recipientAddress,
+  })> decodeSlatepackFromFile({
     required String inputPath,
+    String? walletHandle,
   }) async {
     try {
       // Read slatepack from file
       final slatepackString = await _readSlateFromFile(inputPath);
       
-      // Decode the slatepack using existing function
-      final decodeResult = await lib_mwc.decodeSlatepack(slatepackString);
-
-      if (decodeResult.toUpperCase().contains("ERROR")) {
-        throw Exception("Error decoding slatepack: $decodeResult");
-      }
-
-      return jsonDecode(decodeResult);
+      // Decode the slatepack using unified function
+      return await decodeSlatepack(
+        slatepack: slatepackString,
+        walletHandle: walletHandle,
+      );
     } catch (e) {
       throw ("Error decoding slatepack from file: ${e.toString()}");
     }
@@ -1556,68 +1557,102 @@ abstract class Libmwc {
   }
 
   // ==================================================================
-  // ENHANCED SLATEPACK METHODS
+  // SLATEPACK METHODS
   // ==================================================================
 
   ///
-  /// Enhanced slatepack encoding with encryption support and proper key derivation.
+  /// Encode slate as slatepack with optional encryption
   ///
-  static Future<({String slatepack, bool wasEncrypted, String? recipientAddress})> encodeSlatepackEnhanced({
+  /// Parameters:
+  /// - slateJson: The slate data in JSON format
+  /// - recipientAddress: Optional recipient address for encryption
+  /// - encrypt: Whether to encrypt the slatepack (requires recipientAddress and wallet)
+  /// - wallet: Wallet handle for encryption context (uses current if null)
+  ///
+  /// Returns a record with the slatepack string, encryption status, and recipient address
+  ///
+  static Future<({String slatepack, bool wasEncrypted, String? recipientAddress})> encodeSlatepack({
     required String slateJson,
     String? recipientAddress,
     bool encrypt = false,
     String? wallet,
   }) async {
+    print('=== Slatepack Encoding Debug ===');
+    print('encrypt: $encrypt');
+    print('recipientAddress: $recipientAddress');
+    print('wallet parameter: ${wallet != null ? 'provided' : 'null'}');
+    
     try {
-      // For encrypted slatepacks, we need a wallet context.
-      if (encrypt && recipientAddress != null && wallet == null) {
-        // Try to get current wallet.
-        wallet = WalletManager.getCurrentWalletHandle();
-        if (wallet == null) {
-          throw Exception("Wallet context required for encrypted slatepacks");
-        }
-      }
-
       String slatepackResult;
       
-      if (encrypt && recipientAddress != null && wallet != null) {
-        // Use the enhanced function with wallet context for encrypted slatepacks.
+      if (encrypt && recipientAddress != null) {
+        // For encrypted slatepacks, we need wallet context and use the enhanced function
+        if (wallet == null) {
+          print('Attempting to get current wallet handle for encryption...');
+          wallet = WalletManager.getCurrentWalletHandle();
+          print('Current wallet handle: ${wallet != null ? 'found (${wallet.length} chars)' : 'null'}');
+        }
+        
+        if (wallet == null) {
+          print('ERROR: No wallet context available for encryption');
+          throw Exception("Wallet context required for encrypted slatepacks");
+        }
+        
+        print('Using enhanced encoding with wallet context for encryption');
+        print('Calling lib_mwc.encodeSlatepackEnhanced...');
         slatepackResult = await lib_mwc.encodeSlatepackEnhanced(
           wallet,
           slateJson,
           recipientAddress,
         );
       } else {
-        // Use the basic function for unencrypted slatepacks.
+        // For unencrypted slatepacks, use the basic function
+        print('Using basic encoding (no encryption)');
+        print('Calling lib_mwc.encodeSlatepack...');
         slatepackResult = await lib_mwc.encodeSlatepack(
           slateJson,
           null,
         );
       }
 
+      print('FFI result length: ${slatepackResult.length}');
+      print('FFI result preview: ${slatepackResult.length > 100 ? slatepackResult.substring(0, 100) + '...' : slatepackResult}');
+
       if (slatepackResult.toUpperCase().contains("ERROR")) {
+        print('ERROR in FFI result: $slatepackResult');
         throw Exception("Error encoding slatepack: $slatepackResult");
       }
 
-      return (
+      final result = (
         slatepack: slatepackResult,
         wasEncrypted: encrypt && recipientAddress != null,
         recipientAddress: encrypt ? recipientAddress : null,
       );
+      
+      print('Successfully encoded slatepack. Encrypted: ${result.wasEncrypted}');
+      return result;
     } catch (e) {
-      throw ("Error encoding enhanced slatepack: ${e.toString()}");
+      print('ERROR in encodeSlatepack: ${e.toString()}');
+      print('Stack trace: ${StackTrace.current}');
+      throw ("Error encoding slatepack: ${e.toString()}");
     }
   }
 
   ///
-  /// Enhanced slatepack decoding with encryption detection
+  /// Decode slatepack with automatic encryption detection
+  ///
+  /// Parameters:
+  /// - slatepack: The slatepack string to decode
+  /// - walletHandle: Optional wallet handle for decryption context
+  ///
+  /// Returns a record with the decoded slate JSON, encryption status, and addresses
   ///
   static Future<({
     String slateJson,
     bool wasEncrypted,
     String? senderAddress,
     String? recipientAddress,
-  })> decodeSlatepackEnhanced({
+  })> decodeSlatepack({
     required String slatepack,
     String? walletHandle,
   }) async {
@@ -1640,7 +1675,7 @@ abstract class Libmwc {
         recipientAddress: decodeResponse['recipient'] as String?,
       );
     } catch (e) {
-      throw ("Error decoding enhanced slatepack: ${e.toString()}");
+      throw ("Error decoding slatepack: ${e.toString()}");
     }
   }
 
@@ -1680,7 +1715,7 @@ abstract class Libmwc {
         final slateId = slateData['id'] as String;
 
         // Encode as slatepack
-        final encodeResult = await encodeSlatepackEnhanced(
+        final encodeResult = await encodeSlatepack(
           slateJson: createResult,
           recipientAddress: recipientAddress,
           encrypt: encrypt,
@@ -1714,7 +1749,7 @@ abstract class Libmwc {
     return await m.protect(() async {
       try {
         // First decode the slatepack
-        final decodeResult = await decodeSlatepackEnhanced(
+        final decodeResult = await decodeSlatepack(
           slatepack: inputSlatepack,
           walletHandle: walletHandle,
         );
@@ -1735,7 +1770,7 @@ abstract class Libmwc {
         final slateId = slateData['id'] as String;
 
         // Re-encode as slatepack (maintain encryption if it was encrypted)
-        final reencodeResult = await encodeSlatepackEnhanced(
+        final reencodeResult = await encodeSlatepack(
           slateJson: receiveResult,
           recipientAddress: decodeResult.senderAddress, // Send back to original sender
           encrypt: decodeResult.wasEncrypted,
@@ -1759,7 +1794,7 @@ abstract class Libmwc {
   static Future<bool> isSlatepackEncrypted(String slatepack) async {
     try {
       // Try to decode and check metadata
-      final decodeResult = await decodeSlatepackEnhanced(slatepack: slatepack);
+      final decodeResult = await decodeSlatepack(slatepack: slatepack);
       return decodeResult.wasEncrypted;
     } catch (e) {
       // If we can't decode it at all, assume it might be encrypted
@@ -1773,7 +1808,7 @@ abstract class Libmwc {
   ///
   static Future<Map<String, dynamic>> getSlatepackInfo(String slatepack) async {
     try {
-      final decodeResult = await decodeSlatepackEnhanced(slatepack: slatepack);
+      final decodeResult = await decodeSlatepack(slatepack: slatepack);
       
       // Extract basic slate info
       final slateData = jsonDecode(decodeResult.slateJson);

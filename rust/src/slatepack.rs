@@ -2,7 +2,7 @@ use std::sync::Arc;
 use mwc_util::Mutex;
 use mwc_wallet_impls::{DefaultLCProvider, HTTPNodeClient};
 use mwc_wallet_libwallet::{Error, WalletInst, Slate, SlateVersion, SlatePurpose};
-use mwc_wallet_libwallet::slatepack::{Slatepacker, SlatepackArmor};
+use mwc_wallet_libwallet::slatepack::Slatepacker;
 use mwc_keychain::ExtKeychain;
 use ed25519_dalek::{PublicKey as DalekPublicKey, SecretKey as DalekSecretKey};
 use mwc_util::secp::Secp256k1;
@@ -63,11 +63,14 @@ pub fn encode_slatepack_with_keys(
     
     let (sender_key, sender_secret_key, recipient_key) = if let Some(recipient_addr) = recipient_address {
         // For encrypted slatepacks, we require a real sender secret key from wallet.
-        let sender_secret_key = sender_secret
-            .cloned()
+        let sender_secret_key_ref = sender_secret
             .ok_or_else(|| Error::GenericError(
                 "Sender secret key is required for encrypted slatepacks. Please provide wallet context.".to_string()
             ))?;
+        
+        // Create a new secret key from the bytes (since DalekSecretKey doesn't implement Clone)
+        let sender_secret_key = DalekSecretKey::from_bytes(&sender_secret_key_ref.to_bytes())
+            .map_err(|e| Error::GenericError(format!("Failed to create sender secret key: {:?}", e)))?;
         
         let sender_public = DalekPublicKey::from(&sender_secret_key);
         
@@ -222,7 +225,6 @@ pub fn decode_slatepack_with_wallet(
 /// * Result containing the DalekSecretKey or error.
 fn get_wallet_secret_key(wallet: &Wallet) -> Result<DalekSecretKey, Error> {
     use crate::get_wallet_secret_key_pair;
-    use mwc_util::secp::key::SecretKey;
     
     // Get the wallet's secret key for MWCMQS/slatepack operations.
     // Use index 0 as the default derivation index.
