@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
 import 'dart:io';
@@ -23,18 +24,165 @@ class BadMWCHTTPAddressException implements Exception {
 
 abstract class ListenerManager {
   static Pointer<Void>? pointer;
+  static int _messagesReceived = 0;
+  static DateTime? _startTime;
+  static StreamController<MwcmqsTransaction>? _transactionController;
+  
+  /// Increment the message count.
+  static void incrementMessageCount() {
+    _messagesReceived++;
+  }
+  
+  /// Get the current message count.
+  static int getMessageCount() {
+    return _messagesReceived;
+  }
+  
+  /// Reset the message count.
+  static void resetMessageCount() {
+    _messagesReceived = 0;
+  }
+  
+  /// Set the start time.
+  static void setStartTime(DateTime time) {
+    _startTime = time;
+  }
+  
+  /// Get the start time.
+  static DateTime? getStartTime() {
+    return _startTime;
+  }
+  
+  /// Clear the start time.
+  static void clearStartTime() {
+    _startTime = null;
+  }
+  
+  /// Initialize the transaction stream.
+  static void initializeTransactionStream() {
+    _transactionController ??= StreamController<MwcmqsTransaction>.broadcast();
+  }
+  
+  /// Get the transaction stream.
+  static Stream<MwcmqsTransaction>? getTransactionStream() {
+    return _transactionController?.stream;
+  }
+  
+  /// Add a transaction to the stream.
+  static void addTransaction(MwcmqsTransaction transaction) {
+    incrementMessageCount();
+    _transactionController?.add(transaction);
+  }
+  
+  /// Close the transaction stream.
+  static void closeTransactionStream() {
+    _transactionController?.close();
+    _transactionController = null;
+  }
+}
+
+abstract class WalletManager {
+  static String? _currentWalletHandle;
+  
+  /// Set the current wallet handle for FFI operations.
+  static void setCurrentWalletHandle(String? handle) {
+    _currentWalletHandle = handle;
+  }
+  
+  /// Get the current wallet handle for FFI operations.
+  static String? getCurrentWalletHandle() {
+    return _currentWalletHandle;
+  }
+  
+  /// Clear the current wallet handle.
+  static void clearCurrentWalletHandle() {
+    _currentWalletHandle = null;
+  }
 }
 
 ///
 /// Wrapped up calls to flutter_libmwc.
 ///
-/// Should all be static calls (no state stored in this class)
+/// Should all be static calls (no state stored in this class).
 ///
 abstract class Libmwc {
   static final Mutex m = Mutex();
 
+  // ==================================================================
+  // WALLET MANAGEMENT METHODS
+  // ==================================================================
+
   ///
-  /// Check if [address] is a valid mwc address according to libmwc
+  /// Get the current wallet handle for FFI operations.
+  ///
+  static String? getCurrentWalletHandle() {
+    return WalletManager.getCurrentWalletHandle();
+  }
+
+  ///
+  /// Set the current wallet handle for FFI operations.
+  ///
+  static void setCurrentWalletHandle(String? handle) {
+    WalletManager.setCurrentWalletHandle(handle);
+  }
+
+  ///
+  /// Clear the current wallet handle.
+  ///
+  static void clearCurrentWalletHandle() {
+    WalletManager.clearCurrentWalletHandle();
+  }
+
+  ///
+  /// Check if a wallet is currently open.
+  ///
+  static bool isWalletOpen() {
+    final handle = getCurrentWalletHandle();
+    return handle != null && handle.isNotEmpty;
+  }
+
+  // ==================================================================
+  // MWCMQS LISTENER MANAGEMENT METHODS
+  // ==================================================================
+
+  ///
+  /// Increment the MWCMQS message count (call when a message is received).
+  ///
+  static void incrementMwcmqsMessageCount() {
+    ListenerManager.incrementMessageCount();
+  }
+
+  ///
+  /// Get the current MWCMQS message count.
+  ///
+  static int getMwcmqsMessageCount() {
+    return ListenerManager.getMessageCount();
+  }
+
+  ///
+  /// Reset the MWCMQS message count
+  ///
+  static void resetMwcmqsMessageCount() {
+    ListenerManager.resetMessageCount();
+  }
+
+  ///
+  /// Add an incoming transaction to the stream.
+  ///
+  /// This method should be called when a transaction is received through MWCMQS.
+  /// It will automatically increment the message count and emit the transaction
+  /// to any listeners on the incomingTransactions stream.
+  ///
+  static void addIncomingTransaction(MwcmqsTransaction transaction) {
+    ListenerManager.addTransaction(transaction);
+  }
+
+  // ==================================================================
+  // ADDRESS VALIDATION METHODS  
+  // ==================================================================
+
+  ///
+  /// Check if [address] is a valid mwc address according to libmwc.
   ///
   static bool validateSendAddress({required String address}) {
     final String validate = lib_mwc.validateSendAddress(address);
@@ -135,7 +283,7 @@ abstract class Libmwc {
   }) async {
     return await m.protect(() async {
       try {
-        return await compute(
+        final result = await compute(
           _initializeWalletWrapper,
           (
             config: config,
@@ -144,6 +292,11 @@ abstract class Libmwc {
             name: name,
           ),
         );
+        
+        // Set the current wallet handle for future operations.
+        WalletManager.setCurrentWalletHandle(result);
+        
+        return result;
       } catch (e) {
         throw ("Error creating new wallet : ${e.toString()}");
       }
@@ -639,10 +792,15 @@ abstract class Libmwc {
     required String password,
   }) async {
     try {
-      return await compute(_openWalletWrapper, (
+      final result = await compute(_openWalletWrapper, (
         config: config,
         password: password,
       ));
+      
+      // Set the current wallet handle for future operations
+      WalletManager.setCurrentWalletHandle(result);
+      
+      return result;
     } catch (e) {
       throw ("Error opening wallet : ${e.toString()}");
     }
@@ -719,6 +877,11 @@ abstract class Libmwc {
     try {
       ListenerManager.pointer =
           lib_mwc.mwcMqsListenerStart(wallet, mwcmqsConfig);
+      
+      // Reset and initialize listener state.
+      ListenerManager.resetMessageCount();
+      ListenerManager.setStartTime(DateTime.now());
+      ListenerManager.initializeTransactionStream();
     } catch (e) {
       throw ("Error starting wallet listener ${e.toString()}");
     }
@@ -727,6 +890,9 @@ abstract class Libmwc {
   static void stopMwcMqsListener() {
     if (ListenerManager.pointer != null) {
       lib_mwc.mwcMqsListenerStop(ListenerManager.pointer!);
+      ListenerManager.pointer = null;
+      ListenerManager.clearStartTime();
+      ListenerManager.closeTransactionStream();
     }
   }
 
@@ -871,23 +1037,30 @@ abstract class Libmwc {
       final configString = config.toConfigString();
       ListenerManager.pointer =
           lib_mwc.mwcMqsListenerStart(wallet, configString);
+      
+      // Reset and initialize listener state.
+      ListenerManager.resetMessageCount();
+      ListenerManager.setStartTime(DateTime.now());
+      ListenerManager.initializeTransactionStream();
     } catch (e) {
       throw ("Error starting MWCMQS listener: ${e.toString()}");
     }
   }
 
   ///
-  /// Stop MWCMQS listener
+  /// Stop MWCMQS listener.
   ///
   static Future<void> stopMwcmqsListener() async {
     if (ListenerManager.pointer != null) {
       lib_mwc.mwcMqsListenerStop(ListenerManager.pointer!);
       ListenerManager.pointer = null;
+      ListenerManager.clearStartTime();
+      ListenerManager.closeTransactionStream();
     }
   }
 
   ///
-  /// Get MWCMQS listener status
+  /// Get MWCMQS listener status.
   ///
   static Future<MwcmqsListenerStatus> getMwcmqsListenerStatus({
     MwcmqsConfig config = const MwcmqsConfig(),
@@ -897,20 +1070,31 @@ abstract class Libmwc {
     return MwcmqsListenerStatus(
       isRunning: isRunning,
       config: config,
-      messagesReceived: 0, // TODO: Implement message counting in Rust layer
-      startTime: isRunning ? DateTime.now() : null,
+      messagesReceived: ListenerManager.getMessageCount(),
+      startTime: isRunning ? ListenerManager.getStartTime() : null,
     );
   }
 
-  // TODO: Implement incoming transaction stream when Rust layer supports it
-  // static Stream<MwcmqsTransaction> get incomingTransactions;
+  ///
+  /// Get stream of incoming MWCMQS transactions.
+  ///
+  /// Returns a broadcast stream that emits MwcmqsTransaction objects when
+  /// transactions are received through the MWCMQS listener.
+  /// 
+  /// Note: The listener must be started first using startMwcmqsListener().
+  /// To manually add transactions to the stream (e.g., from Rust callbacks),
+  /// use addIncomingTransaction().
+  ///
+  static Stream<MwcmqsTransaction>? get incomingTransactions {
+    return ListenerManager.getTransactionStream();
+  }
 
   // ==================================================================
   // FILE-BASED TRANSACTION METHODS
   // ==================================================================
 
   ///
-  /// Create slate and save to file
+  /// Create slate and save to file.
   ///
   static Future<({String slateId, String filePath})> createSlateToFile({
     required String wallet,
@@ -1388,7 +1572,7 @@ abstract class Libmwc {
       // For encrypted slatepacks, we need a wallet context.
       if (encrypt && recipientAddress != null && wallet == null) {
         // Try to get current wallet.
-        wallet = getCurrentWalletHandle();
+        wallet = WalletManager.getCurrentWalletHandle();
         if (wallet == null) {
           throw Exception("Wallet context required for encrypted slatepacks");
         }
