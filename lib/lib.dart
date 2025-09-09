@@ -1241,7 +1241,7 @@ abstract class Libmwc {
   }
 
   ///
-  /// Decode slatepack from file
+  /// Decode slatepack from file.
   ///
   static Future<({
     String slateJson,
@@ -1253,10 +1253,10 @@ abstract class Libmwc {
     String? walletHandle,
   }) async {
     try {
-      // Read slatepack from file
+      // Read slatepack from file.
       final slatepackString = await _readSlateFromFile(inputPath);
       
-      // Decode the slatepack using unified function
+      // Decode the slatepack using unified function.
       return await decodeSlatepack(
         slatepack: slatepackString,
         walletHandle: walletHandle,
@@ -1599,9 +1599,28 @@ abstract class Libmwc {
         }
         
         print('Using enhanced encoding with wallet context for encryption');
+        print('Wallet handle: $wallet');
+        
+        // The wallet handle should already be in JSON format [handle, secret_key]
+        // If it's not, we need to format it correctly
+        String walletData = wallet;
+        if (!wallet.startsWith('[') || !wallet.contains(',')) {
+          // Handle case where wallet is just a raw integer handle
+          try {
+            int walletHandle = int.parse(wallet);
+            walletData = '[$walletHandle, null]';
+            print('Converted raw wallet handle to JSON format: $walletData');
+          } catch (e) {
+            print('ERROR: Could not parse wallet handle: $e');
+            throw Exception("Invalid wallet handle format");
+          }
+        } else {
+          print('Wallet handle already in JSON format: $walletData');
+        }
+        
         print('Calling lib_mwc.encodeSlatepackEnhanced...');
         slatepackResult = await lib_mwc.encodeSlatepackEnhanced(
-          wallet,
+          walletData,
           slateJson,
           recipientAddress,
         );

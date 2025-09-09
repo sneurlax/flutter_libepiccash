@@ -2234,8 +2234,16 @@ unsafe fn _encode_slatepack_enhanced(
         Some(str_recipient_address)
     };
 
-    // Get wallet instance.
-    let wallet_inst = get_wallet(&str_wallet)?;
+    // Parse the wallet data as a tuple (wallet_handle, optional_secret_key)
+    let tuple_wallet_data: (i64, Option<SecretKey>) = serde_json::from_str(str_wallet)
+        .map_err(|e| Error::GenericError(format!("Invalid wallet data: {}", e)))?;
+    let wallet_handle = tuple_wallet_data.0;
+    let _sek_key = tuple_wallet_data.1;
+
+    ensure_wallet!(wallet_handle, wallet);
+
+    // Get wallet instance from handle
+    let wallet_inst = wallet;
 
     // Use the wallet-aware encode function.
     let slatepack_str = slatepack::encode_slatepack_with_wallet(
