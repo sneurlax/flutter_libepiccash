@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_libmwc/mwc.dart' as mwc;
 
 import '../services/wallet_service.dart';
+import 'open_wallet_view.dart';
 
 class WalletInfoView extends StatefulWidget {
   const WalletInfoView({super.key});
@@ -53,9 +54,7 @@ class _WalletInfoViewState extends State<WalletInfoView> {
           _currentWallet = currentWallet;
         });
 
-        // First, ensure the wallet is opened.
-        // Note: We would need the password here, but for now we'll try without opening.
-        // TODO: Consider adding password prompt or storing session state.
+        // First, open the wallet.
 
         // Step 2: Load wallet info.
         setState(() {
@@ -304,8 +303,14 @@ class _WalletInfoViewState extends State<WalletInfoView> {
                           ),
                           const SizedBox(height: 16),
                           ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.pushNamed(context, '/open-wallet');
+                            onPressed: () async {
+                              await Navigator.of(context).push(
+                                MaterialPageRoute<dynamic>(
+                                  builder: (context) => const OpenWalletView(),
+                                ),
+                              );
+                              // Refresh wallet info after returning from password screen.
+                              _loadWalletInfo();
                             },
                             icon: const Icon(Icons.login),
                             label: const Text('Open Wallet'),

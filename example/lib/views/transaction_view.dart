@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../services/wallet_service.dart';
+import 'open_wallet_view.dart';
 
 class TransactionView extends StatelessWidget {
   TransactionView({Key? key, required this.password}) : super(key: key);
@@ -162,8 +163,14 @@ class _MwcTransactionView extends State<MwcTransactionView> {
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton.icon(
-                        onPressed: () {
-                          Navigator.pushNamed(context, '/open-wallet');
+                        onPressed: () async {
+                          setState(() {
+                            await Navigator.of(context).push(
+                              MaterialPageRoute<dynamic>(
+                                builder: (context) => const OpenWalletView(),
+                              ),
+                            );
+                          });
                         },
                         icon: const Icon(Icons.login),
                         label: const Text('Open Wallet'),
